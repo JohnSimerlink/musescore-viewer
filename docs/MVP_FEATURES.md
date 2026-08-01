@@ -95,7 +95,9 @@ These are where Copland should beat a click-only editor:
 | Parts / linked parts extraction | Conductor vs part views |
 | Mixer / instrument changes | Playback routing |
 | Live MSCZ round-trip on Railway | Docker image with MuseScore CLI for SVG/audio re-render |
-| Collaborative editing | CRDT / OT on ops log |
+| Git-like song branching UI | Branches / merge / compare — see [PRD.md](./PRD.md); mutation log is the substrate |
+| Named version picker UI | Labels already supported on mutation log (`label_version` / hop) |
+| Realtime collaboration | Cursors + shared mutation stream — see [PRD.md](./PRD.md) |
 | MIDI / piano-roll hybrid | Pitch grid for dense edits |
 | Optical music recognition import | PDF / photo → score |
 | Plugin / scripting surface | Expose same tool registry |
@@ -107,11 +109,11 @@ These are where Copland should beat a click-only editor:
 ## Architecture notes (current phase)
 
 1. **Mutable score model** loads seed `score.mscz` (MSCX inside zip) into an in-memory `ScoreDocument` on the Python agent.
-2. **Apply layer** mutates the MSCX tree with an undo/redo snapshot stack; tool status is `applied` (not stub).
+2. **Apply layer** appends each edit to a **mutation event log** (tree-friendly: parent ids, hop-to-id, named labels) with document snapshots; linear undo/redo moves the head. Tool status is `applied` (not stub). See [PRD.md](./PRD.md) for versioning/collab intent.
 3. **Re-render**: when MuseScore 4 CLI is available (`MSCORE_BIN` or macOS app path), applied edits export fresh SVG pages + timeline (+ optional audio). Without CLI, mutations still apply; UI keeps seed SVG and shows a render-status note.
-4. **Selection** is measure-level in the browser, derived from timeline geometry; sent with chat / apply requests.
+4. **Selection** is measure-level in the browser, derived from timeline geometry; sent with chat / apply requests. Mobile: Select mode + long-press to start/extend ranges.
 5. **Agent** (Python / PydanticAI) owns conversation history and the full MVP tool registry. Node serves the UI and proxies `/api/chat` + `/api/session/*`.
-6. **UI layout**: desktop = score center + NL **right rail**; mobile = compact **bottom chat dock** with **Expand** → fullscreen chat-only and **← Score** back control.
+6. **UI shells**: desktop = library sidebar + score stage + NL **right rail**. Mobile = **score-first** (library drawer, compact transport, bottom chat dock, fullscreen chat). IA: Library ↔ Score ↔ Chat fullscreen.
 7. **Railway / production**: Docker serves seed UI assets. Agent + MuseScore CLI are not in the production image yet — local `npm start` + `npm run agent` is the end-to-end edit path. Plan: agent sidecar and/or image with MuseScore for live re-render.
 
 ### Env vars

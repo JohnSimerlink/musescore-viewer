@@ -1,5 +1,4 @@
 const statusEl = document.getElementById("status");
-const metaEl = document.getElementById("meta");
 const pagesEl = document.getElementById("pages");
 const scoreListEl = document.getElementById("scoreList");
 const playerBar = document.getElementById("playerBar");
@@ -20,9 +19,14 @@ const commandTranscript = document.getElementById("commandTranscript");
 const editToolbar = document.getElementById("editToolbar");
 const durationSelect = document.getElementById("durationSelect");
 const renderStatus = document.getElementById("renderStatus");
-const agentRail = document.getElementById("agentRail");
 const agentExpandBtn = document.getElementById("agentExpandBtn");
 const agentBackBtn = document.getElementById("agentBackBtn");
+const emptyState = document.getElementById("emptyState");
+const scoreWorkspace = document.getElementById("scoreWorkspace");
+const libraryOpenBtn = document.getElementById("libraryOpenBtn");
+const libraryCloseBtn = document.getElementById("libraryCloseBtn");
+const libraryBackdrop = document.getElementById("libraryBackdrop");
+const emptyLibraryBtn = document.getElementById("emptyLibraryBtn");
 
 let activeSlug = null;
 let activeTitle = null;
@@ -42,8 +46,10 @@ let seedMeta = null;
 let scoreRevision = 0;
 
 function setStatus(text, isError = false) {
-  statusEl.textContent = text;
+  const t = (text || "").trim();
+  statusEl.textContent = t;
   statusEl.classList.toggle("error", isError);
+  statusEl.hidden = !t || (!isError && /^(Loaded|Loading)/i.test(t));
 }
 
 function setAudioStatus(text) {
@@ -99,16 +105,54 @@ function initTheme() {
   });
 }
 
-/* ---------- Agent rail (desktop) / bottom dock + fullscreen (mobile) ---------- */
 
-function isMobileAgentLayout() {
+/* ---------- Library drawer (mobile) ---------- */
+
+function isMobileShell() {
   return window.matchMedia("(max-width: 960px)").matches;
 }
 
+function setLibraryOpen(open) {
+  const on = Boolean(open) && isMobileShell();
+  document.body.classList.toggle("library-open", on);
+  libraryBackdrop.hidden = !on;
+  libraryCloseBtn.hidden = !isMobileShell();
+  libraryOpenBtn.hidden = !isMobileShell();
+}
+
+function initLibraryShell() {
+  const mq = window.matchMedia("(max-width: 960px)");
+  const sync = () => {
+    libraryOpenBtn.hidden = !mq.matches;
+    libraryCloseBtn.hidden = !mq.matches;
+    if (!mq.matches) {
+      document.body.classList.remove("library-open");
+      libraryBackdrop.hidden = true;
+    }
+  };
+  sync();
+  mq.addEventListener("change", sync);
+  libraryOpenBtn.addEventListener("click", () => setLibraryOpen(true));
+  libraryCloseBtn.addEventListener("click", () => setLibraryOpen(false));
+  libraryBackdrop.addEventListener("click", () => setLibraryOpen(false));
+  emptyLibraryBtn.addEventListener("click", () => {
+    if (isMobileShell()) setLibraryOpen(true);
+    else scoreListEl.querySelector("button")?.focus();
+  });
+}
+
+function showScoreWorkspace(show) {
+  emptyState.hidden = show;
+  scoreWorkspace.hidden = !show;
+  document.body.classList.toggle("has-score", show);
+}
+
+/* ---------- Agent rail (desktop) / bottom dock + fullscreen (mobile) ---------- */
+
 function setAgentExpanded(expanded) {
-  const on = Boolean(expanded) && isMobileAgentLayout();
+  const on = Boolean(expanded) && isMobileShell();
   document.body.classList.toggle("agent-expanded", on);
-  agentExpandBtn.hidden = !isMobileAgentLayout() || on;
+  agentExpandBtn.hidden = !isMobileShell() || on;
   agentBackBtn.hidden = !on;
   agentExpandBtn.setAttribute("aria-expanded", on ? "true" : "false");
   if (on) {
@@ -457,6 +501,65 @@ function setSelectMode(on) {
 
 /* ---------- Score load / refresh ---------- */
 
+function bindScorePointer(stage, pageIndex, svgEl) {
+  let longPressTimer = 0;
+  let longPressFired = false;
+  const clearLong = () => {
+    if (longPressTimer) {
+      clearTimeout(longPressTimer);
+      longPressTimer = 0;
+    }
+  };
+
+  stage.addEventListener(
+    "pointerdown",
+    (ev) => {
+      if (ev.pointerType === "mouse" && ev.button !== 0) return;
+      longPressFired = false;
+      clearLong();
+      longPressTimer = window.setTimeout(() => {
+        longPressFired = true;
+        if (!selectMode) setSelectMode(true);
+        const pt = svgPointFromClient(svgEl, ev.clientX, ev.clientY);
+        if (!pt) return;
+        const m = measureAtPoint(pageIndex, pt.x, pt.y);
+        if (!m) return;
+        if (anchorMeasure != null && selection) {
+          setSelectionRange(anchorMeasure, m.measure);
+        } else {
+          anchorMeasure = m.measure;
+          setSelectionRange(m.measure, m.measure);
+        }
+        setAudioStatus("Select mode · tap another measure to extend");
+      }, 420);
+    },
+    { passive: true },
+  );
+
+  stage.addEventListener(
+    "pointerup",
+    (ev) => {
+      clearLong();
+      if (longPressFired) {
+        ev.preventDefault();
+        return;
+      }
+    },
+    { passive: false },
+  );
+  stage.addEventListener("pointercancel", clearLong);
+  stage.addEventListener("pointerleave", clearLong);
+  stage.addEventListener("click", (ev) => {
+    if (longPressFired) {
+      longPressFired = false;
+      ev.preventDefault();
+      ev.stopPropagation();
+      return;
+    }
+    onScoreClick(ev, pageIndex, svgEl);
+  });
+}
+
 function mountPages(svgTexts) {
   pagesEl.innerHTML = "";
   pageViews = [];
@@ -474,7 +577,7 @@ function mountPages(svgTexts) {
     const svgEl = stage.querySelector("svg");
     const playhead = stage.querySelector(".playhead");
     const overlay = stage.querySelector(".measure-overlay");
-    stage.addEventListener("click", (ev) => onScoreClick(ev, pageIndex, svgEl));
+    bindScorePointer(stage, pageIndex, svgEl);
     pagesEl.appendChild(wrap);
     pageViews.push({ page: pageIndex, wrap, svg: svgEl, playhead, stage, overlay });
   });
@@ -575,10 +678,9 @@ async function openSession(slug, title) {
 async function loadScore(slug) {
   activeSlug = slug;
   highlightActive();
-  setStatus("Loading score…");
-  metaEl.hidden = true;
-  playerBar.hidden = true;
-  editToolbar.hidden = true;
+  setLibraryOpen(false);
+  showScoreWorkspace(true);
+  setStatus("Loading…");
   pagesEl.innerHTML = "";
   pageViews = [];
   timeline = null;
@@ -596,23 +698,14 @@ async function loadScore(slug) {
     seedMeta = meta;
     activeTitle = meta.title || slug;
 
-    const pageCount = await loadSeedVisuals(slug, meta);
+    await loadSeedVisuals(slug, meta);
 
-    metaEl.hidden = false;
-    metaEl.innerHTML = `
-      <strong>${escapeHtml(meta.title)}</strong>
-      · ${pageCount} page${pageCount === 1 ? "" : "s"}
-      · ${escapeHtml(formatDuration(meta.durationMs))}
-      · ~${measures.length} measures
-      · <span class="cursor-hint">click to seek · Select / Shift+click for measures</span>
-    `;
-
-    playerBar.hidden = false;
-    editToolbar.hidden = false;
     stopBtn.hidden = true;
     setSelectMode(selectMode);
-    setAudioStatus("Ready");
-    setStatus("Loaded. Press Play, or click the score to jump.");
+    setAudioStatus(
+      `${meta.title} · tap to seek · Select or long-press measures`,
+    );
+    setStatus("");
     updatePlayhead(0);
     window.addEventListener("resize", paintSelectionOverlays);
     await openSession(slug, activeTitle);
@@ -648,7 +741,10 @@ async function loadCatalog() {
         <span class="name">${escapeHtml(score.title)}</span>
         <span class="meta">${score.pageCount} pages · ${escapeHtml(formatDuration(score.durationMs))}</span>
       `;
-      btn.addEventListener("click", () => loadScore(score.slug));
+      btn.addEventListener("click", () => {
+        setLibraryOpen(false);
+        loadScore(score.slug);
+      });
       scoreListEl.appendChild(btn);
     }
   } catch (err) {
@@ -931,6 +1027,10 @@ document.addEventListener("keydown", (ev) => {
       setAgentExpanded(false);
       return;
     }
+    if (document.body.classList.contains("library-open")) {
+      setLibraryOpen(false);
+      return;
+    }
     if (selectMode) setSelectMode(false);
     clearSelection();
     return;
@@ -973,6 +1073,8 @@ audioEl.addEventListener("play", () => {
 audioEl.addEventListener("seeked", () => updatePlayhead(audioEl.currentTime * 1000));
 
 initTheme();
+initLibraryShell();
 initAgentRail();
+showScoreWorkspace(false);
 renderTranscript();
 loadCatalog();

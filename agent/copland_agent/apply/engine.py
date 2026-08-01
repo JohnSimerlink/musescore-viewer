@@ -7,6 +7,7 @@ from typing import Any
 
 from ..models import PlannedOp, SelectionContext
 from ..score.mscx import ScoreDocument
+from .history import MutationLog
 
 KEY_NAME_TO_FIFTHS = {
     "c": 0,
@@ -51,51 +52,120 @@ def _voice_filter(selection: SelectionContext | None) -> set[int] | None:
 
 class ApplyEngine:
     def __init__(self, document: ScoreDocument):
-        self.document = document
-        self._undo: list[ScoreDocument] = []
-        self._redo: list[ScoreDocument] = []
+        self.log = MutationLog(document)
+        self.document = self.log.document()
         self.clipboard: list[Any] | None = None  # list of Measure element deep copies per staff
         self.selection: SelectionContext | None = None
         self.revision = 0
+        self._pending_base: ScoreDocument | None = None
+
+    def _sync_doc(self) -> None:
+        self.document = self.log.document()
+
+    def _begin_mutation(self) -> None:
+        """Clone current head so a failed mutation can discard work."""
+        self._pending_base = self.document.clone()
+        self.document = self._pending_base
+
+    def _commit_mutation(self, tool: str, args: dict[str, Any], detail: str | None) -> None:
+        self.log.append(tool=tool, args=args, detail=detail, document=self.document)
+        self._sync_doc()
+        self._pending_base = None
+        self.revision += 1
+
+    def _abort_mutation(self) -> None:
+        self._sync_doc()
+        self._pending_base = None
 
     def _push_undo(self) -> None:
-        self._undo.append(self.document.clone())
-        self._redo.clear()
-        if len(self._undo) > 50:
-            self._undo.pop(0)
+        """Backward-compatible: start a mutating edit (snapshot taken at commit)."""
+        self._begin_mutation()
+
+    def _applied(self, op: PlannedOp) -> ApplyResult:
+        if op.status == "error":
+            if self._pending_base is not None:
+                self._abort_mutation()
+            return ApplyResult(op, summary=self.snapshot_summary())
+        if self._pending_base is not None:
+            self._commit_mutation(op.tool, op.args, op.detail)
+        return ApplyResult(op, summary=self.snapshot_summary())
 
     def snapshot_summary(self) -> dict[str, Any]:
         return self.document.summary()
 
     def can_undo(self) -> bool:
-        return bool(self._undo)
+        return self.log.can_undo()
 
     def can_redo(self) -> bool:
-        return bool(self._redo)
+        return self.log.can_redo()
 
     def undo(self) -> ApplyResult:
-        if not self._undo:
+        if not self.log.can_undo():
             return ApplyResult(
                 PlannedOp(tool="undo", status="error", detail="Nothing to undo."),
             )
-        self._redo.append(self.document.clone())
-        self.document = self._undo.pop()
+        self.log.undo()
+        self._sync_doc()
         self.revision += 1
         return ApplyResult(
-            PlannedOp(tool="undo", status="applied", detail="Undid last edit."),
+            PlannedOp(
+                tool="undo",
+                status="applied",
+                detail=f"Undid last edit (head={self.log.head_id}).",
+            ),
             summary=self.snapshot_summary(),
         )
 
     def redo(self) -> ApplyResult:
-        if not self._redo:
+        if not self.log.can_redo():
             return ApplyResult(
                 PlannedOp(tool="redo", status="error", detail="Nothing to redo."),
             )
-        self._undo.append(self.document.clone())
-        self.document = self._redo.pop()
+        self.log.redo()
+        self._sync_doc()
         self.revision += 1
         return ApplyResult(
-            PlannedOp(tool="redo", status="applied", detail="Redid last edit."),
+            PlannedOp(
+                tool="redo",
+                status="applied",
+                detail=f"Redid last edit (head={self.log.head_id}).",
+            ),
+            summary=self.snapshot_summary(),
+        )
+
+    def hop_to(self, event_id: str) -> ApplyResult:
+        try:
+            self.log.hop_to(event_id)
+        except KeyError as exc:
+            return ApplyResult(
+                PlannedOp(tool="hop_to", args={"id": event_id}, status="error", detail=str(exc))
+            )
+        self._sync_doc()
+        self.revision += 1
+        return ApplyResult(
+            PlannedOp(
+                tool="hop_to",
+                args={"id": event_id},
+                status="applied",
+                detail=f"Hopped to {event_id}.",
+            ),
+            summary=self.snapshot_summary(),
+        )
+
+    def label_version(self, name: str) -> ApplyResult:
+        try:
+            ev = self.log.label_current(name)
+        except ValueError as exc:
+            return ApplyResult(
+                PlannedOp(tool="label_version", args={"name": name}, status="error", detail=str(exc))
+            )
+        return ApplyResult(
+            PlannedOp(
+                tool="label_version",
+                args={"name": name, "id": ev.id},
+                status="applied",
+                detail=f"Labeled {ev.id} as '{name}'.",
+            ),
             summary=self.snapshot_summary(),
         )
 
@@ -123,6 +193,8 @@ class ApplyEngine:
             "set_lyrics": self._set_lyrics,
             "undo": lambda _a: self.undo(),
             "redo": lambda _a: self.redo(),
+            "hop_to": lambda a: self.hop_to(str(a.get("id") or a.get("event_id") or "")),
+            "label_version": lambda a: self.label_version(str(a.get("name") or "")),
             "play_selection": self._play_selection,
             "set_selection_voices": self._set_selection_voices,
         }
@@ -172,8 +244,7 @@ class ApplyEngine:
             staff_ids=_staff_filter(sel),
             voices=_voice_filter(sel),
         )
-        self.revision += 1
-        return ApplyResult(
+        return self._applied(
             PlannedOp(
                 tool="transpose_selection",
                 args={"semitones": semitones, "selection": sel.model_dump(exclude_none=True)},
@@ -182,8 +253,7 @@ class ApplyEngine:
                     f"Transposed measures {sel.measure_start}–{sel.measure_end} "
                     f"by {semitones:+d} semitone(s) ({n} notes)."
                 ),
-            ),
-            summary=self.snapshot_summary(),
+            )
         )
 
     def _delete_selection(self, args: dict[str, Any]) -> ApplyResult:
@@ -199,15 +269,13 @@ class ApplyEngine:
             staff_ids=_staff_filter(sel),
             voices=_voice_filter(sel),
         )
-        self.revision += 1
-        return ApplyResult(
+        return self._applied(
             PlannedOp(
                 tool="delete_selection",
                 args={"selection": sel.model_dump(exclude_none=True)},
                 status="applied",
                 detail=f"Deleted content in measures {sel.measure_start}–{sel.measure_end} ({n} chords → rests).",
-            ),
-            summary=self.snapshot_summary(),
+            )
         )
 
     def _duplicate(self, args: dict[str, Any]) -> ApplyResult:
@@ -228,7 +296,7 @@ class ApplyEngine:
         try:
             n = self.document.duplicate_measures(start, end, insert_after)
         except ValueError as exc:
-            self.document = self._undo.pop()
+            self._abort_mutation()
             return ApplyResult(
                 PlannedOp(
                     tool="duplicate_measures",
@@ -238,8 +306,7 @@ class ApplyEngine:
                 )
             )
         target = insert_after if insert_after is not None else end
-        self.revision += 1
-        return ApplyResult(
+        return self._applied(
             PlannedOp(
                 tool="duplicate_measures",
                 args={
@@ -249,8 +316,7 @@ class ApplyEngine:
                 },
                 status="applied",
                 detail=f"Cloned measures {start}–{end} after measure {target} ({n} measures).",
-            ),
-            summary=self.snapshot_summary(),
+            )
         )
 
     def _set_duration(self, args: dict[str, Any]) -> ApplyResult:
@@ -271,7 +337,7 @@ class ApplyEngine:
                 voices=_voice_filter(sel),
             )
         except ValueError as exc:
-            self.document = self._undo.pop()
+            self._abort_mutation()
             return ApplyResult(
                 PlannedOp(
                     tool="set_note_duration",
@@ -280,8 +346,7 @@ class ApplyEngine:
                     detail=str(exc),
                 )
             )
-        self.revision += 1
-        return ApplyResult(
+        return self._applied(
             PlannedOp(
                 tool="set_note_duration",
                 args={
@@ -290,8 +355,7 @@ class ApplyEngine:
                 },
                 status="applied",
                 detail=f"Set {n} chord duration(s) to {duration} in measures {sel.measure_start}–{sel.measure_end}.",
-            ),
-            summary=self.snapshot_summary(),
+            )
         )
 
     def _set_selection(self, args: dict[str, Any]) -> ApplyResult:
@@ -379,19 +443,17 @@ class ApplyEngine:
                 voice=int(args.get("voice", 1)),
             )
         except (KeyError, ValueError) as exc:
-            self.document = self._undo.pop()
+            self._abort_mutation()
             return ApplyResult(
                 PlannedOp(tool="add_note", args=args, status="error", detail=str(exc))
             )
-        self.revision += 1
-        return ApplyResult(
+        return self._applied(
             PlannedOp(
                 tool="add_note",
                 args=args,
                 status="applied",
                 detail=f"Added note pitch={args.get('pitch')} in measure {args.get('measure')}.",
-            ),
-            summary=self.snapshot_summary(),
+            )
         )
 
     def _delete_note(self, args: dict[str, Any]) -> ApplyResult:
@@ -402,7 +464,7 @@ class ApplyEngine:
             staff_id=args.get("staff"),
         )
         if n == 0:
-            self.document = self._undo.pop()
+            self._abort_mutation()
             return ApplyResult(
                 PlannedOp(
                     tool="delete_note",
@@ -411,15 +473,13 @@ class ApplyEngine:
                     detail="No matching note found.",
                 )
             )
-        self.revision += 1
-        return ApplyResult(
+        return self._applied(
             PlannedOp(
                 tool="delete_note",
                 args=args,
                 status="applied",
                 detail=f"Deleted {n} note(s).",
-            ),
-            summary=self.snapshot_summary(),
+            )
         )
 
     def _add_rest(self, args: dict[str, Any]) -> ApplyResult:
@@ -433,19 +493,17 @@ class ApplyEngine:
                 voice=int(args.get("voice", 1)),
             )
         except (KeyError, ValueError) as exc:
-            self.document = self._undo.pop()
+            self._abort_mutation()
             return ApplyResult(
                 PlannedOp(tool="add_rest", args=args, status="error", detail=str(exc))
             )
-        self.revision += 1
-        return ApplyResult(
+        return self._applied(
             PlannedOp(
                 tool="add_rest",
                 args=args,
                 status="applied",
                 detail=f"Added rest in measure {args.get('measure')}.",
-            ),
-            summary=self.snapshot_summary(),
+            )
         )
 
     def _copy(self, args: dict[str, Any]) -> ApplyResult:
@@ -534,7 +592,7 @@ class ApplyEngine:
                 abs_idx = measure_nodes[0][0] - 1 if measure_nodes else len(list(staff)) - 1
             else:
                 if target > len(measure_nodes):
-                    self.document = self._undo.pop()
+                    self._abort_mutation()
                     return ApplyResult(
                         PlannedOp(
                             tool="paste_selection",
@@ -546,15 +604,13 @@ class ApplyEngine:
                 abs_idx = measure_nodes[target - 1][0]
             for offset, m in enumerate(entry["measures"]):
                 staff.insert(abs_idx + 1 + offset, _copy.deepcopy(m))
-        self.revision += 1
-        return ApplyResult(
+        return self._applied(
             PlannedOp(
                 tool="paste_selection",
                 args={"target": target},
                 status="applied",
                 detail=f"Pasted clipboard after measure {target}.",
-            ),
-            summary=self.snapshot_summary(),
+            )
         )
 
     def _insert_measures(self, args: dict[str, Any]) -> ApplyResult:
@@ -564,7 +620,7 @@ class ApplyEngine:
         try:
             n = self.document.insert_measures(count, after)
         except ValueError as exc:
-            self.document = self._undo.pop()
+            self._abort_mutation()
             return ApplyResult(
                 PlannedOp(
                     tool="insert_measures",
@@ -573,15 +629,13 @@ class ApplyEngine:
                     detail=str(exc),
                 )
             )
-        self.revision += 1
-        return ApplyResult(
+        return self._applied(
             PlannedOp(
                 tool="insert_measures",
                 args={"count": count, "after_measure": after},
                 status="applied",
                 detail=f"Inserted {n} measure(s) after measure {after}.",
-            ),
-            summary=self.snapshot_summary(),
+            )
         )
 
     def _delete_measures(self, args: dict[str, Any]) -> ApplyResult:
@@ -591,7 +645,7 @@ class ApplyEngine:
         try:
             n = self.document.delete_measures(start, end)
         except (KeyError, ValueError) as exc:
-            self.document = self._undo.pop()
+            self._abort_mutation()
             return ApplyResult(
                 PlannedOp(
                     tool="delete_measures",
@@ -600,15 +654,13 @@ class ApplyEngine:
                     detail=str(exc),
                 )
             )
-        self.revision += 1
-        return ApplyResult(
+        return self._applied(
             PlannedOp(
                 tool="delete_measures",
                 args={"measure_start": start, "measure_end": end},
                 status="applied",
                 detail=f"Deleted {n} measure(s) ({start}–{end}).",
-            ),
-            summary=self.snapshot_summary(),
+            )
         )
 
     def _set_time_signature(self, args: dict[str, Any]) -> ApplyResult:
@@ -619,7 +671,7 @@ class ApplyEngine:
         try:
             self.document.set_time_signature(num, den, measure)
         except ValueError as exc:
-            self.document = self._undo.pop()
+            self._abort_mutation()
             return ApplyResult(
                 PlannedOp(
                     tool="set_time_signature",
@@ -628,15 +680,13 @@ class ApplyEngine:
                     detail=str(exc),
                 )
             )
-        self.revision += 1
-        return ApplyResult(
+        return self._applied(
             PlannedOp(
                 tool="set_time_signature",
                 args={"numerator": num, "denominator": den, "measure": measure},
                 status="applied",
                 detail=f"Set time signature {num}/{den} at measure {measure}.",
-            ),
-            summary=self.snapshot_summary(),
+            )
         )
 
     def _set_key_signature(self, args: dict[str, Any]) -> ApplyResult:
@@ -659,7 +709,7 @@ class ApplyEngine:
         try:
             self.document.set_key_signature(fifths, measure)
         except ValueError as exc:
-            self.document = self._undo.pop()
+            self._abort_mutation()
             return ApplyResult(
                 PlannedOp(
                     tool="set_key_signature",
@@ -668,15 +718,13 @@ class ApplyEngine:
                     detail=str(exc),
                 )
             )
-        self.revision += 1
-        return ApplyResult(
+        return self._applied(
             PlannedOp(
                 tool="set_key_signature",
                 args={"fifths": fifths, "measure": measure},
                 status="applied",
                 detail=f"Set key signature fifths={fifths} at measure {measure}.",
-            ),
-            summary=self.snapshot_summary(),
+            )
         )
 
     def _set_tempo(self, args: dict[str, Any]) -> ApplyResult:
@@ -686,19 +734,17 @@ class ApplyEngine:
         try:
             self.document.set_tempo(bpm, measure)
         except ValueError as exc:
-            self.document = self._undo.pop()
+            self._abort_mutation()
             return ApplyResult(
                 PlannedOp(tool="set_tempo", args=args, status="error", detail=str(exc))
             )
-        self.revision += 1
-        return ApplyResult(
+        return self._applied(
             PlannedOp(
                 tool="set_tempo",
                 args={"bpm": bpm, "measure": measure},
                 status="applied",
                 detail=f"Set tempo ♩={bpm} at measure {measure}.",
-            ),
-            summary=self.snapshot_summary(),
+            )
         )
 
     def _add_dynamic(self, args: dict[str, Any]) -> ApplyResult:
@@ -713,19 +759,17 @@ class ApplyEngine:
                 staff_id=args.get("staff"),
             )
         except ValueError as exc:
-            self.document = self._undo.pop()
+            self._abort_mutation()
             return ApplyResult(
                 PlannedOp(tool="add_dynamic", args=args, status="error", detail=str(exc))
             )
-        self.revision += 1
-        return ApplyResult(
+        return self._applied(
             PlannedOp(
                 tool="add_dynamic",
                 args=args,
                 status="applied",
                 detail=f"Added dynamic '{marking}' at measure {measure}.",
-            ),
-            summary=self.snapshot_summary(),
+            )
         )
 
     def _set_lyrics(self, args: dict[str, Any]) -> ApplyResult:
@@ -740,7 +784,7 @@ class ApplyEngine:
             staff_id=args.get("staff"),
         )
         if n == 0:
-            self.document = self._undo.pop()
+            self._abort_mutation()
             return ApplyResult(
                 PlannedOp(
                     tool="set_lyrics",
@@ -749,15 +793,13 @@ class ApplyEngine:
                     detail="No note found to attach lyrics.",
                 )
             )
-        self.revision += 1
-        return ApplyResult(
+        return self._applied(
             PlannedOp(
                 tool="set_lyrics",
                 args=args,
                 status="applied",
                 detail=f"Set lyrics on measure {measure}.",
-            ),
-            summary=self.snapshot_summary(),
+            )
         )
 
     def _play_selection(self, args: dict[str, Any]) -> ApplyResult:

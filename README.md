@@ -34,8 +34,8 @@ npm run agent
 
 ### Layout
 
-- **Desktop:** NL agent is a **right rail** (transcript + input + selection badge).
-- **Mobile:** compact **bottom chat dock**; **Expand** opens fullscreen chat-only; **← Score** returns to the score with the bottom dock.
+- **Desktop:** scores sidebar + main stage + NL **right rail**.
+- **Mobile (score-first shell):** library is a **drawer** (not stacked permanently); score fills the viewport; slim transport; compact **bottom chat dock**; **Expand** → fullscreen chat-only; **← Score** returns. Long-press a measure to enter/extend selection. Product IA: [docs/PRD.md](docs/PRD.md).
 
 ### Re-render after edits
 

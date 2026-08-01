@@ -83,6 +83,7 @@ class ScoreSession:
             "summary": self.engine.snapshot_summary(),
             "can_undo": self.engine.can_undo(),
             "can_redo": self.engine.can_redo(),
+            "history": self.engine.log.public_history(),
             "selection": self.engine.selection.model_dump() if self.engine.selection else None,
             "render": {
                 "ok": bool(self.last_render and self.last_render.ok),

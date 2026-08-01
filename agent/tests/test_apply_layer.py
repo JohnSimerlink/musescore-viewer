@@ -172,3 +172,26 @@ def test_no_silent_stub_for_transpose(engine):
     assert op.status == "applied"
     assert op.status != "stub"
     assert "Would" not in (op.detail or "")
+
+
+def test_mutation_log_hop_and_label(engine):
+    sel = SelectionContext(measure_start=1, measure_end=1)
+    root_id = engine.log.head_id
+    engine.apply("transpose_selection", {"semitones": 1, "selection": sel})
+    mid = engine.log.head_id
+    engine.apply("transpose_selection", {"semitones": 1, "selection": sel})
+    tip = engine.log.head_id
+    assert tip != mid != root_id
+    label = engine.apply("label_version", {"name": "v3.1"})
+    assert label.op.status == "applied"
+    assert engine.log.labels["v3.1"] == tip
+    hop = engine.apply("hop_to", {"id": root_id})
+    assert hop.op.status == "applied"
+    assert engine.log.head_id == root_id
+    pitches = [n.pitch for n in engine.document.iter_notes(measure_start=1, measure_end=1)]
+    engine.apply("hop_to", {"id": tip})
+    tipped = [n.pitch for n in engine.document.iter_notes(measure_start=1, measure_end=1)]
+    assert tipped == [p + 2 for p in pitches]
+    hist = engine.log.public_history()
+    assert hist["head_id"] == tip
+    assert "v3.1" in hist["labels"]

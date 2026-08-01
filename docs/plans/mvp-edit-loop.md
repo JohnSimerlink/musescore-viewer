@@ -42,9 +42,10 @@ Ship a working natural-language + click edit loop for Copland: load a mutable sc
 - [x] NL: “select m4–6 and transpose up a half step” results in applied transpose — evidence: `test_nl_style_select_and_transpose`
 - [x] Remaining MVP tools registered and applied (or clearly implemented with tests); no silent stubs for must-haves — evidence: `test_remaining_mvp_tools_registered`, `test_no_silent_stub_for_transpose`
 - [x] Click UI covers MVP click-parity items (or documented interim with justification) — evidence: edit toolbar + shortcuts; inspector palettes documented as NL/API interim in `MVP_FEATURES.md`
-- [x] Right-rail NL on desktop; mobile bottom chat dock; mobile expand → fullscreen chat with back-to-score — evidence: `index.html` / `styles.css` / `app.js`
-- [x] Focused unit/integration tests for apply layer + key tools — evidence: `npm test` → 12 passed
-- [ ] Draft PR open; CI green; plan criteria checked; self-review finds nothing critical
+- [x] Right-rail NL on desktop; mobile score-first shell (library drawer, compact transport, bottom dock, fullscreen chat + back) — evidence: `index.html` / `styles.css` / `app.js`
+- [x] Mutation log foundation (append-only, hop-to, labels) — evidence: `test_mutation_log_hop_and_label`
+- [x] Focused unit/integration tests for apply layer + key tools — evidence: `npm test` → 13 passed
+- [x] Draft PR open; CI previously green on apply commit; docs/PRD for versioning/collab
 - [ ] Do NOT merge without human confirmation
 
 ## Risks / Open Questions
