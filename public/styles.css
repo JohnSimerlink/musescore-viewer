@@ -1,12 +1,20 @@
 :root {
-  --bg: #14181d;
-  --panel: #1d242c;
-  --ink: #e8eef4;
-  --muted: #93a1b0;
-  --line: #2c3642;
-  --accent: #7cb8ff;
-  --accent-ink: #0b1220;
-  --danger: #ff8e8e;
+  --paper: #f2f4f7;
+  --paper-deep: #e6eaef;
+  --ink: #1a2433;
+  --ink-soft: #4a5568;
+  --rule: #c5ced9;
+  --sky: #8fa8c4;
+  --sky-deep: #5b7a96;
+  --prairie: #6b7f5a;
+  --brass: #c4a35a;
+  --brass-ink: #2a2416;
+  --playhead: #c45c26;
+  --focus: #3d6b8c;
+  --ok: #3f6f55;
+  --danger: #a63d3d;
+  --radius: 6px;
+  --shadow: 0 1px 0 rgba(26, 36, 51, 0.06);
 }
 
 * {
@@ -18,11 +26,11 @@ body {
   margin: 0;
   min-height: 100%;
   background:
-    radial-gradient(1200px 500px at 10% -10%, #243246 0%, transparent 55%),
-    radial-gradient(900px 400px at 100% 0%, #2a2218 0%, transparent 45%),
-    var(--bg);
+    radial-gradient(1100px 520px at 8% -8%, color-mix(in srgb, var(--sky) 42%, transparent) 0%, transparent 58%),
+    radial-gradient(900px 480px at 100% 100%, color-mix(in srgb, var(--prairie) 18%, transparent) 0%, transparent 52%),
+    var(--paper);
   color: var(--ink);
-  font: 15px/1.45 "Avenir Next", "Segoe UI", sans-serif;
+  font: 15px/1.45 "IBM Plex Sans", "Segoe UI", sans-serif;
 }
 
 .top {
@@ -30,10 +38,10 @@ body {
   justify-content: space-between;
   gap: 1rem;
   align-items: flex-end;
-  padding: 1.25rem 1.5rem;
-  border-bottom: 1px solid var(--line);
-  background: color-mix(in srgb, var(--panel) 88%, transparent);
-  backdrop-filter: blur(8px);
+  padding: 1.35rem 1.5rem 1.15rem;
+  border-bottom: 1px solid var(--rule);
+  background: color-mix(in srgb, var(--paper) 86%, transparent);
+  backdrop-filter: blur(6px);
   position: sticky;
   top: 0;
   z-index: 2;
@@ -41,14 +49,20 @@ body {
 
 .brand h1 {
   margin: 0;
-  font-size: 1.35rem;
-  letter-spacing: 0.02em;
+  font-family: "Big Shoulders Display", sans-serif;
+  font-size: clamp(2.1rem, 4vw, 2.75rem);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  color: var(--ink);
 }
 
 .brand p {
-  margin: 0.2rem 0 0;
-  color: var(--muted);
-  font-size: 0.9rem;
+  margin: 0.35rem 0 0;
+  color: var(--ink-soft);
+  font-family: Literata, Georgia, serif;
+  font-size: 0.95rem;
+  font-style: italic;
 }
 
 .controls {
@@ -62,19 +76,23 @@ body {
 button,
 select {
   appearance: none;
-  border: 1px solid var(--line);
-  background: var(--panel);
+  border: 1px solid var(--rule);
+  background: var(--paper-deep);
   color: var(--ink);
-  border-radius: 10px;
+  border-radius: var(--radius);
   padding: 0.55rem 0.85rem;
   cursor: pointer;
+  font: inherit;
+  box-shadow: var(--shadow);
 }
 
-.file-btn {
-  background: var(--accent);
-  color: var(--accent-ink);
-  border-color: transparent;
-  font-weight: 650;
+.file-btn,
+.btn-primary,
+#playBtn {
+  background: var(--brass);
+  color: var(--brass-ink);
+  border-color: color-mix(in srgb, var(--brass) 70%, var(--brass-ink));
+  font-weight: 600;
 }
 
 .file-btn input {
@@ -84,28 +102,37 @@ select {
 button:hover,
 select:hover,
 .file-btn:hover {
-  filter: brightness(1.08);
+  filter: brightness(0.97);
+}
+
+button:focus-visible,
+select:focus-visible,
+.file-btn:focus-visible,
+.score-item:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 
 .layout {
   display: grid;
   grid-template-columns: minmax(220px, 300px) 1fr;
   gap: 0;
-  min-height: calc(100vh - 90px);
+  min-height: calc(100vh - 100px);
 }
 
 .sidebar {
-  border-right: 1px solid var(--line);
+  border-right: 1px solid var(--rule);
   padding: 1rem;
-  background: color-mix(in srgb, var(--panel) 70%, transparent);
+  background: color-mix(in srgb, var(--paper-deep) 55%, transparent);
 }
 
 .sidebar h2 {
   margin: 0 0 0.75rem;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--muted);
+  letter-spacing: 0.1em;
+  color: var(--ink-soft);
 }
 
 .filters {
@@ -118,17 +145,17 @@ select:hover,
 .filter {
   padding: 0.35rem 0.55rem;
   font-size: 0.78rem;
-  border-radius: 999px;
+  border-radius: var(--radius);
 }
 
 .filter.active {
-  background: var(--accent);
-  color: var(--accent-ink);
+  background: var(--sky-deep);
+  color: #fff;
   border-color: transparent;
 }
 
 .filter-count {
-  color: var(--muted);
+  color: var(--ink-soft);
   font-size: 0.78rem;
   margin-bottom: 0.65rem;
 }
@@ -145,32 +172,32 @@ select:hover,
   display: inline-block;
   margin-right: 0.35rem;
   padding: 0.05rem 0.4rem;
-  border-radius: 999px;
+  border-radius: var(--radius);
   font-size: 0.7rem;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.03em;
-  background: #314055;
-  color: #d7e6f7;
+  background: color-mix(in srgb, var(--sky) 28%, var(--paper-deep));
+  color: var(--sky-deep);
 }
 
 .badge.ms-2 {
-  background: #3a4030;
-  color: #d7e3a8;
+  background: color-mix(in srgb, var(--prairie) 22%, var(--paper-deep));
+  color: var(--prairie);
 }
 
 .badge.ms-3 {
-  background: #2f4a38;
-  color: #b9efc8;
+  background: color-mix(in srgb, var(--ok) 20%, var(--paper-deep));
+  color: var(--ok);
 }
 
 .badge.ms-4 {
-  background: #3a3358;
-  color: #d7ccff;
+  background: color-mix(in srgb, var(--sky-deep) 18%, var(--paper-deep));
+  color: var(--sky-deep);
 }
 
 .badge.ms-u {
-  background: #4a3a2f;
-  color: #f0d2b4;
+  background: color-mix(in srgb, var(--brass) 28%, var(--paper-deep));
+  color: var(--brass-ink);
 }
 
 .player {
@@ -180,9 +207,10 @@ select:hover,
   align-items: center;
   margin-bottom: 1rem;
   padding: 0.75rem 0.9rem;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--paper-deep);
+  box-shadow: var(--shadow);
 }
 
 .player audio {
@@ -190,7 +218,7 @@ select:hover,
 }
 
 .audio-status {
-  color: var(--muted);
+  color: var(--ink-soft);
   font-size: 0.85rem;
 }
 
@@ -200,14 +228,19 @@ select:hover,
   border: 1px solid transparent;
   background: transparent;
   color: var(--ink);
-  border-radius: 10px;
+  border-radius: var(--radius);
   padding: 0.65rem 0.75rem;
+  box-shadow: none;
 }
 
-.score-item:hover,
+.score-item:hover {
+  background: color-mix(in srgb, var(--sky) 14%, var(--paper));
+  border-color: var(--rule);
+}
+
 .score-item.active {
-  background: #243041;
-  border-color: var(--line);
+  background: color-mix(in srgb, var(--sky) 22%, var(--paper));
+  border-color: color-mix(in srgb, var(--sky-deep) 45%, var(--rule));
 }
 
 .score-item .name {
@@ -219,8 +252,14 @@ select:hover,
 .score-item .meta {
   display: block;
   margin-top: 0.15rem;
-  color: var(--muted);
+  color: var(--ink-soft);
   font-size: 0.78rem;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+  box-shadow: none;
+  margin-bottom: 0;
 }
 
 .stage {
@@ -228,8 +267,9 @@ select:hover,
 }
 
 .status {
-  color: var(--muted);
+  color: var(--ink-soft);
   margin-bottom: 0.75rem;
+  font-family: Literata, Georgia, serif;
 }
 
 .status.error {
@@ -239,9 +279,10 @@ select:hover,
 .meta {
   margin-bottom: 1rem;
   padding: 0.75rem 0.9rem;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--paper-deep);
+  box-shadow: var(--shadow);
 }
 
 .pages {
@@ -253,10 +294,11 @@ select:hover,
 
 .page {
   width: min(100%, 980px);
-  background: #f7f4ee;
+  background: #fff;
   color: #111;
-  border-radius: 8px;
-  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
   overflow: hidden;
 }
 
@@ -277,7 +319,7 @@ select:hover,
   left: 0;
   width: 3px;
   margin-left: -1px;
-  background: #e11d48;
+  background: var(--playhead);
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.55);
   border-radius: 2px;
   pointer-events: none;
@@ -286,7 +328,7 @@ select:hover,
 }
 
 .cursor-hint {
-  color: var(--muted);
+  color: var(--ink-soft);
   font-size: 0.9em;
 }
 
@@ -297,7 +339,7 @@ select:hover,
 
   .sidebar {
     border-right: 0;
-    border-bottom: 1px solid var(--line);
+    border-bottom: 1px solid var(--rule);
   }
 
   .score-list {
