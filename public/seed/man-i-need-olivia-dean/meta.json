@@ -1,0 +1,31 @@
+{
+  "slug": "man-i-need-olivia-dean",
+  "title": "Man I Need (Olivia Dean)",
+  "pages": [
+    "page-1.svg",
+    "page-2.svg",
+    "page-3.svg",
+    "page-4.svg",
+    "page-5.svg",
+    "page-6.svg",
+    "page-7.svg",
+    "page-8.svg",
+    "page-9.svg",
+    "page-10.svg",
+    "page-11.svg",
+    "page-12.svg",
+    "page-13.svg",
+    "page-14.svg",
+    "page-15.svg",
+    "page-16.svg",
+    "page-17.svg",
+    "page-18.svg",
+    "page-19.svg",
+    "page-20.svg"
+  ],
+  "audio": "audio.mp3",
+  "timeline": "timeline.json",
+  "score": "score.mscz",
+  "pageCount": 20,
+  "durationMs": 181500
+}

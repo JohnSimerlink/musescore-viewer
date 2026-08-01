@@ -1,18 +1,8 @@
 # MuseScore Viewer
 
-Localhost web UI for browsing and rendering `.mscz` / `.mscx` scores.
+Frontend-only sheet viewer with seeded scores, audio playback, and a clickable playhead.
 
-- Lists scores from `~/Documents/MuseScore4/Scores` and `~/Documents/incommon`
-- Filter by **MuseScore 3 / 4 / Unknown**
-- Renders via MuseScore CLI (default) with optional browser [webmscore](https://github.com/LibreScore/webmscore)
-- **Play audio** exports MP3 through MuseScore CLI
-
-## Requirements
-
-- Node.js 18+
-- MuseScore 3 or 4 installed (CLI used for reliable MS4 render + audio)
-
-## Run
+## Local
 
 ```bash
 npm install
@@ -21,7 +11,14 @@ npm start
 
 Open http://localhost:5177
 
-## Notes
+## Re-seed scores
 
-- webmscore often returns blank pages for MuseScore 4 files; Auto mode detects that and falls back to the CLI.
-- Audio files are cached under your system temp dir (`msviewer-cache`).
+Requires MuseScore 4 CLI on macOS:
+
+```bash
+npm run seed
+```
+
+## Railway
+
+Docker image serves the static UI + pre-rendered seed assets (SVG, MP3, timeline). No MuseScore runtime needed in production.

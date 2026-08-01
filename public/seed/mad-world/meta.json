@@ -1,0 +1,19 @@
+{
+  "slug": "mad-world",
+  "title": "Mad World",
+  "pages": [
+    "page-1.svg",
+    "page-2.svg",
+    "page-3.svg",
+    "page-4.svg",
+    "page-5.svg",
+    "page-6.svg",
+    "page-7.svg",
+    "page-8.svg"
+  ],
+  "audio": "audio.mp3",
+  "timeline": "timeline.json",
+  "score": "score.mscz",
+  "pageCount": 8,
+  "durationMs": 198092
+}

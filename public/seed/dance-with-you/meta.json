@@ -1,0 +1,13 @@
+{
+  "slug": "dance-with-you",
+  "title": "Dance With You",
+  "pages": [
+    "page-1.svg",
+    "page-2.svg"
+  ],
+  "audio": "audio.mp3",
+  "timeline": "timeline.json",
+  "score": "score.mscz",
+  "pageCount": 2,
+  "durationMs": 62000
+}

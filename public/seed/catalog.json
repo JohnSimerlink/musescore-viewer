@@ -1,0 +1,32 @@
+{
+  "scores": [
+    {
+      "slug": "dance-with-you",
+      "title": "Dance With You",
+      "pageCount": 2,
+      "durationMs": 62000,
+      "metaPath": "/seed/dance-with-you/meta.json"
+    },
+    {
+      "slug": "mad-world",
+      "title": "Mad World",
+      "pageCount": 8,
+      "durationMs": 198092,
+      "metaPath": "/seed/mad-world/meta.json"
+    },
+    {
+      "slug": "man-i-need-olivia-dean",
+      "title": "Man I Need (Olivia Dean)",
+      "pageCount": 20,
+      "durationMs": 181500,
+      "metaPath": "/seed/man-i-need-olivia-dean/meta.json"
+    },
+    {
+      "slug": "winter-wonderland",
+      "title": "Winter Wonderland",
+      "pageCount": 1,
+      "durationMs": 109500,
+      "metaPath": "/seed/winter-wonderland/meta.json"
+    }
+  ]
+}

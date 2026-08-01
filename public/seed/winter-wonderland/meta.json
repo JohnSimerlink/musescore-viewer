@@ -1,0 +1,12 @@
+{
+  "slug": "winter-wonderland",
+  "title": "Winter Wonderland",
+  "pages": [
+    "page-1.svg"
+  ],
+  "audio": "audio.mp3",
+  "timeline": "timeline.json",
+  "score": "score.mscz",
+  "pageCount": 1,
+  "durationMs": 109500
+}

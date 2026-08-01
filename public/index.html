@@ -10,43 +10,23 @@
     <header class="top">
       <div class="brand">
         <h1>MuseScore Viewer</h1>
-        <p>Localhost sheet renderer · webmscore + MuseScore CLI fallback</p>
-      </div>
-      <div class="controls">
-        <label class="file-btn">
-          Open file
-          <input id="fileInput" type="file" accept=".mscz,.mscx,application/octet-stream" />
-        </label>
-        <select id="prefer">
-          <option value="cli" selected>MuseScore CLI only</option>
-          <option value="auto">Auto (webmscore → CLI)</option>
-          <option value="webmscore">webmscore only</option>
-        </select>
-        <button id="reloadScores" type="button">Refresh list</button>
+        <p>Seeded scores · click notation to seek · playhead follows audio</p>
       </div>
     </header>
 
     <main class="layout">
       <aside class="sidebar">
         <h2>Scores</h2>
-        <div class="filters" id="filters" role="group" aria-label="Filter by MuseScore version">
-          <button type="button" class="filter active" data-filter="all">All</button>
-          <button type="button" class="filter" data-filter="2">MS2</button>
-          <button type="button" class="filter" data-filter="3">MS3</button>
-          <button type="button" class="filter" data-filter="4">MS4</button>
-          <button type="button" class="filter" data-filter="unknown">Unknown</button>
-        </div>
-        <div id="filterCount" class="filter-count"></div>
         <div id="scoreList" class="score-list">Loading…</div>
       </aside>
       <section class="stage">
-        <div id="status" class="status">Pick a score or open a file.</div>
+        <div id="status" class="status">Pick a seeded score.</div>
         <div id="meta" class="meta" hidden></div>
         <div class="player" id="playerBar" hidden>
-          <button type="button" id="playBtn">Play audio</button>
+          <button type="button" id="playBtn">Play</button>
           <button type="button" id="stopBtn" hidden>Stop</button>
           <span id="audioStatus" class="audio-status"></span>
-          <audio id="audioEl" controls preload="none"></audio>
+          <audio id="audioEl" controls preload="metadata"></audio>
         </div>
         <div id="pages" class="pages"></div>
       </section>

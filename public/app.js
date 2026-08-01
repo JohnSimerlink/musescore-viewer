@@ -1,35 +1,18 @@
-import WebMscore from "/vendor/webmscore/webmscore.mjs";
-
 const statusEl = document.getElementById("status");
 const metaEl = document.getElementById("meta");
 const pagesEl = document.getElementById("pages");
 const scoreListEl = document.getElementById("scoreList");
-const filterCountEl = document.getElementById("filterCount");
-const fileInput = document.getElementById("fileInput");
-const preferEl = document.getElementById("prefer");
-const reloadBtn = document.getElementById("reloadScores");
-const filtersEl = document.getElementById("filters");
 const playerBar = document.getElementById("playerBar");
 const playBtn = document.getElementById("playBtn");
 const stopBtn = document.getElementById("stopBtn");
 const audioEl = document.getElementById("audioEl");
 const audioStatus = document.getElementById("audioStatus");
 
-let activePath = null;
-let activeFile = null;
-let activeFilename = "";
-let allScores = [];
-let versionFilter = "all";
-let audioObjectUrl = null;
+let activeSlug = null;
 /** @type {null | { unit: number, elements: Record<string, any>, events: {elid:number, positionMs:number}[] }} */
 let timeline = null;
+let pageViews = [];
 let rafId = 0;
-let pageViews = []; // { page, wrap, svg, playhead }
-
-let webmscoreReady = WebMscore.ready.catch((err) => {
-  console.warn("webmscore failed to init", err);
-  return null;
-});
 
 function setStatus(text, isError = false) {
   statusEl.textContent = text;
@@ -48,191 +31,29 @@ function escapeHtml(s) {
     .replaceAll('"', "&quot;");
 }
 
-function clearAudio() {
-  cancelAnimationFrame(rafId);
-  audioEl.pause();
-  audioEl.removeAttribute("src");
-  audioEl.load();
-  if (audioObjectUrl) {
-    URL.revokeObjectURL(audioObjectUrl);
-    audioObjectUrl = null;
-  }
-  stopBtn.hidden = true;
-  playBtn.disabled = false;
-  setAudioStatus("");
-  hidePlayheads();
+function formatDuration(ms) {
+  if (!ms && ms !== 0) return "";
+  const s = Math.round(ms / 1000);
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${String(r).padStart(2, "0")}`;
 }
 
 function hidePlayheads() {
-  for (const pv of pageViews) {
-    pv.playhead.hidden = true;
-  }
+  for (const pv of pageViews) pv.playhead.hidden = true;
 }
 
-function showResult({ title, pages, method, fallbackFrom, timeline: tl }) {
-  timeline = tl || null;
-  metaEl.hidden = false;
-  metaEl.innerHTML = `
-    <strong>${escapeHtml(title || "Untitled")}</strong>
-    · ${pages.length} page${pages.length === 1 ? "" : "s"}
-    · via <code>${escapeHtml(method)}</code>
-    ${
-      timeline
-        ? `· <span class="cursor-hint">click score to seek</span>`
-        : ""
-    }
-    ${
-      fallbackFrom?.length
-        ? `<div class="fallback">Fell back after: ${escapeHtml(
-            fallbackFrom.join(" · ")
-          )}</div>`
-        : ""
-    }
-  `;
-  pagesEl.innerHTML = "";
-  pageViews = [];
-  pages.forEach((svg, pageIndex) => {
-    const wrap = document.createElement("div");
-    wrap.className = "page";
-    wrap.dataset.page = String(pageIndex);
-    wrap.innerHTML = `
-      <div class="page-stage">
-        ${svg}
-        <div class="playhead" hidden></div>
-      </div>
-    `;
-    const stage = wrap.querySelector(".page-stage");
-    const svgEl = stage.querySelector("svg");
-    const playhead = stage.querySelector(".playhead");
-    stage.addEventListener("click", (ev) => onScoreClick(ev, pageIndex, svgEl));
-    pagesEl.appendChild(wrap);
-    pageViews.push({ page: pageIndex, wrap, svg: svgEl, playhead, stage });
-  });
-  playerBar.hidden = false;
-  clearAudio();
-  setStatus(
-    timeline
-      ? "Rendered. Play audio to follow the cursor, or click the score to seek."
-      : "Rendered."
-  );
+function stopPlayheadLoop() {
+  cancelAnimationFrame(rafId);
 }
 
-async function ensureTimeline() {
-  if (timeline?.events?.length) return timeline;
-  if (!activePath && !activeFile) return null;
-  setAudioStatus("Loading playback timeline…");
-  const fd = new FormData();
-  if (activeFile) fd.set("file", activeFile, activeFile.name);
-  if (activePath) fd.set("path", activePath);
-  const res = await fetch("/api/timeline", { method: "POST", body: fd });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-  timeline = data.timeline;
-  return timeline;
-}
-
-async function bytesFromPath(filePath) {
-  const res = await fetch(`/api/scores/file?path=${encodeURIComponent(filePath)}`);
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || `HTTP ${res.status}`);
-  }
-  return new Uint8Array(await res.arrayBuffer());
-}
-
-/** webmscore often "succeeds" on MuseScore 4 files with empty white SVGs. */
-function isBlankSvg(svg) {
-  if (!svg || svg.length < 800) return true;
-  const paths = (svg.match(/<path\b/gi) || []).length;
-  const texts = (svg.match(/<text\b/gi) || []).length;
-  const uses = (svg.match(/<use\b/gi) || []).length;
-  return paths + texts + uses < 8;
-}
-
-function assertUsefulPages(pages) {
-  if (!pages?.length) throw new Error("no pages");
-  if (pages.every(isBlankSvg)) {
-    throw new Error("blank SVG pages (likely unsupported MuseScore 4 format)");
-  }
-}
-
-async function renderWithWebmscore(data, filename) {
-  await webmscoreReady;
-  if (!WebMscore?.load) throw new Error("webmscore not initialized");
-  const format = filename.toLowerCase().endsWith(".mscx") ? "mscx" : "mscz";
-  const score = await WebMscore.load(format, data);
-  try {
-    const title = await score.title();
-    const npages = await score.npages();
-    const pages = [];
-    for (let i = 0; i < npages; i++) {
-      pages.push(await score.saveSvg(i, true));
-    }
-    assertUsefulPages(pages);
-    return { title, pages, method: "webmscore", timeline: null };
-  } finally {
-    score.destroy();
-  }
-}
-
-async function renderWithCli({ file, path: filePath }) {
-  const fd = new FormData();
-  if (file) fd.set("file", file, file.name);
-  if (filePath) fd.set("path", filePath);
-  const res = await fetch("/api/render", { method: "POST", body: fd });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-  return data;
-}
-
-async function renderScore({ file = null, path: filePath = null, filename = "" }) {
-  activeFile = file;
-  activePath = filePath;
-  activeFilename = filename || file?.name || filePath || "score.mscz";
-  highlightActive();
-
-  setStatus("Rendering… this can take a few seconds.");
-  metaEl.hidden = true;
-  playerBar.hidden = true;
-  pagesEl.innerHTML = "";
-  timeline = null;
-  pageViews = [];
-  clearAudio();
-
-  const prefer = preferEl.value;
-  const errors = [];
-  const name = activeFilename;
-
-  if (prefer === "webmscore" || prefer === "auto") {
-    try {
-      const data = file
-        ? new Uint8Array(await file.arrayBuffer())
-        : await bytesFromPath(filePath);
-      const result = await renderWithWebmscore(data, name);
-      showResult(result);
-      // Fetch CLI timeline in background for cursor support
-      ensureTimeline().catch(() => {});
-      return;
-    } catch (err) {
-      errors.push(`webmscore: ${err.message || err}`);
-      if (prefer === "webmscore") {
-        setStatus(errors.join(" | "), true);
-        return;
-      }
-      setStatus(
-        `webmscore produced unusable output, using MuseScore CLI… (${err.message || err})`
-      );
-    }
-  }
-
-  try {
-    const result = await renderWithCli({ file, path: filePath });
-    if (errors.length) result.fallbackFrom = errors;
-    showResult(result);
-  } catch (err) {
-    errors.push(`cli: ${err.message || err}`);
-    setStatus(errors.join(" | "), true);
-  }
+function startPlayheadLoop() {
+  stopPlayheadLoop();
+  const tick = () => {
+    updatePlayhead(audioEl.currentTime * 1000);
+    if (!audioEl.paused && !audioEl.ended) rafId = requestAnimationFrame(tick);
+  };
+  rafId = requestAnimationFrame(tick);
 }
 
 function svgPointFromClient(svg, clientX, clientY) {
@@ -262,7 +83,6 @@ function cursorAtMs(ms) {
       const t = Math.min(1, Math.max(0, (ms - cur.positionMs) / span));
       x = el.x + (nel.x - el.x) * t;
     } else {
-      // end of system: ease across current segment width
       const span = Math.max(1, (next?.positionMs || cur.positionMs + 500) - cur.positionMs);
       const t = Math.min(1, Math.max(0, (ms - cur.positionMs) / span));
       x = el.x + el.sx * t * 0.85;
@@ -291,7 +111,6 @@ function updatePlayhead(ms) {
     const vb = pv.svg.viewBox.baseVal;
     const svgW = vb.width || pv.svg.width.baseVal.value;
     const svgH = vb.height || pv.svg.height.baseVal.value;
-    // Position relative to the displayed SVG box
     const rect = pv.svg.getBoundingClientRect();
     const stageRect = pv.stage.getBoundingClientRect();
     const scaleX = rect.width / svgW;
@@ -305,26 +124,8 @@ function updatePlayhead(ms) {
   }
 }
 
-function tickPlayhead() {
-  if (!audioEl.paused || audioEl.currentTime > 0) {
-    updatePlayhead(audioEl.currentTime * 1000);
-  }
-  if (!audioEl.paused && !audioEl.ended) {
-    rafId = requestAnimationFrame(tickPlayhead);
-  }
-}
-
-async function onScoreClick(ev, pageIndex, svg) {
-  if (!timeline) {
-    try {
-      await ensureTimeline();
-    } catch (err) {
-      setAudioStatus(String(err.message || err));
-      return;
-    }
-  }
+function onScoreClick(ev, pageIndex, svg) {
   if (!timeline?.events?.length) return;
-
   const pt = svgPointFromClient(svg, ev.clientX, ev.clientY);
   if (!pt) return;
   const unit = timeline.unit || 12;
@@ -336,217 +137,170 @@ async function onScoreClick(ev, pageIndex, svg) {
   for (const evnt of timeline.events) {
     const el = timeline.elements[String(evnt.elid)] || timeline.elements[evnt.elid];
     if (!el || el.page !== pageIndex) continue;
-    // Prefer hits inside the segment box; else nearest on same system row
     const inY = my >= el.y - el.sy * 0.15 && my <= el.y + el.sy * 1.05;
     if (!inY) continue;
-    const cx = el.x + el.sx * 0.15;
     const dx = mx < el.x ? el.x - mx : mx > el.x + el.sx ? mx - (el.x + el.sx) : 0;
-    const dist = dx;
     const inside = mx >= el.x && mx <= el.x + el.sx;
-    const score = inside ? dist - 1e9 : dist;
+    const score = inside ? dx - 1e9 : dx;
     if (score < bestDist) {
       bestDist = score;
-      // interpolate within segment if click is inside
       let ms = evnt.positionMs;
       if (inside && el.sx > 0) {
         const t = Math.min(1, Math.max(0, (mx - el.x) / el.sx));
-        // find next event on same system for span
         const idx = timeline.events.indexOf(evnt);
         const next = timeline.events[idx + 1];
-        if (next) {
-          ms = evnt.positionMs + (next.positionMs - evnt.positionMs) * t;
-        }
+        if (next) ms = evnt.positionMs + (next.positionMs - evnt.positionMs) * t;
       }
       best = ms;
     }
   }
-
   if (best == null) return;
 
   const seekSec = best / 1000;
-  updatePlayhead(best);
-
-  // Ensure audio is loaded, then seek
-  if (!audioEl.src) {
-    setAudioStatus("Loading audio to seek…");
-    await playAudio({ seekTo: seekSec, autoplay: true });
-    return;
-  }
   audioEl.currentTime = seekSec;
   updatePlayhead(best);
   if (audioEl.paused) {
-    try {
-      await audioEl.play();
+    audioEl.play().then(() => {
+      setAudioStatus("Playing");
       startPlayheadLoop();
-    } catch {
-      setAudioStatus(`Seeked to ${seekSec.toFixed(1)}s — press Play`);
-    }
+    }).catch(() => setAudioStatus(`Seeked to ${seekSec.toFixed(1)}s`));
   } else {
     setAudioStatus(`Seeked to ${seekSec.toFixed(1)}s`);
   }
 }
 
-function startPlayheadLoop() {
-  cancelAnimationFrame(rafId);
-  rafId = requestAnimationFrame(tickPlayhead);
-}
-
-async function playAudio({ seekTo = null, autoplay = true } = {}) {
-  if (!activePath && !activeFile) {
-    setAudioStatus("Load a score first.");
-    return;
-  }
-  playBtn.disabled = true;
-  setAudioStatus("Exporting audio via MuseScore…");
-  try {
-    await ensureTimeline().catch(() => null);
-
-    if (!audioEl.src) {
-      const fd = new FormData();
-      if (activeFile) fd.set("file", activeFile, activeFile.name);
-      if (activePath) fd.set("path", activePath);
-      const res = await fetch("/api/audio", { method: "POST", body: fd });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || `HTTP ${res.status}`);
-      }
-      const blob = await res.blob();
-      if (audioObjectUrl) URL.revokeObjectURL(audioObjectUrl);
-      audioObjectUrl = URL.createObjectURL(blob);
-      audioEl.src = audioObjectUrl;
-    }
-
-    stopBtn.hidden = false;
-    if (seekTo != null) audioEl.currentTime = seekTo;
-    if (autoplay) {
-      await audioEl.play();
-      setAudioStatus("Playing");
-      startPlayheadLoop();
-    } else {
-      updatePlayhead((seekTo ?? audioEl.currentTime) * 1000);
-    }
-  } catch (err) {
-    setAudioStatus(String(err.message || err));
-  } finally {
-    playBtn.disabled = false;
-  }
-}
-
-function stopAudio() {
-  cancelAnimationFrame(rafId);
+async function loadScore(slug) {
+  activeSlug = slug;
+  highlightActive();
+  setStatus("Loading score…");
+  metaEl.hidden = true;
+  playerBar.hidden = true;
+  pagesEl.innerHTML = "";
+  pageViews = [];
+  timeline = null;
+  stopPlayheadLoop();
   audioEl.pause();
-  audioEl.currentTime = 0;
-  hidePlayheads();
-  setAudioStatus("Stopped");
+
+  try {
+    const metaRes = await fetch(`/seed/${slug}/meta.json`);
+    if (!metaRes.ok) throw new Error(`meta HTTP ${metaRes.status}`);
+    const meta = await metaRes.json();
+
+    const [timelineRes, ...pageRes] = await Promise.all([
+      fetch(`/seed/${slug}/${meta.timeline}`),
+      ...meta.pages.map((p) => fetch(`/seed/${slug}/${p}`)),
+    ]);
+    if (!timelineRes.ok) throw new Error("timeline missing");
+    timeline = await timelineRes.json();
+
+    const pages = [];
+    for (const res of pageRes) {
+      if (!res.ok) throw new Error("page missing");
+      pages.push(await res.text());
+    }
+
+    metaEl.hidden = false;
+    metaEl.innerHTML = `
+      <strong>${escapeHtml(meta.title)}</strong>
+      · ${pages.length} page${pages.length === 1 ? "" : "s"}
+      · ${escapeHtml(formatDuration(meta.durationMs))}
+      · <span class="cursor-hint">click score to seek</span>
+    `;
+
+    pages.forEach((svg, pageIndex) => {
+      const wrap = document.createElement("div");
+      wrap.className = "page";
+      wrap.innerHTML = `
+        <div class="page-stage">
+          ${svg}
+          <div class="playhead" hidden></div>
+        </div>
+      `;
+      const stage = wrap.querySelector(".page-stage");
+      const svgEl = stage.querySelector("svg");
+      const playhead = stage.querySelector(".playhead");
+      stage.addEventListener("click", (ev) => onScoreClick(ev, pageIndex, svgEl));
+      pagesEl.appendChild(wrap);
+      pageViews.push({ page: pageIndex, wrap, svg: svgEl, playhead, stage });
+    });
+
+    audioEl.src = `/seed/${slug}/${meta.audio}`;
+    playerBar.hidden = false;
+    stopBtn.hidden = true;
+    setAudioStatus("Ready");
+    setStatus("Loaded. Press Play, or click the score to jump.");
+    updatePlayhead(0);
+  } catch (err) {
+    setStatus(String(err.message || err), true);
+  }
 }
 
 function highlightActive() {
   for (const btn of scoreListEl.querySelectorAll(".score-item")) {
-    btn.classList.toggle("active", btn.dataset.path === activePath);
+    btn.classList.toggle("active", btn.dataset.slug === activeSlug);
   }
 }
 
-function filteredScores() {
-  if (versionFilter === "all") return allScores;
-  if (versionFilter === "unknown") {
-    return allScores.filter((s) => s.msMajor == null);
-  }
-  const major = Number(versionFilter);
-  return allScores.filter((s) => s.msMajor === major);
-}
-
-function renderScoreList() {
-  const scores = filteredScores();
-  const counts = {
-    all: allScores.length,
-    2: allScores.filter((s) => s.msMajor === 2).length,
-    3: allScores.filter((s) => s.msMajor === 3).length,
-    4: allScores.filter((s) => s.msMajor === 4).length,
-    unknown: allScores.filter((s) => s.msMajor == null).length,
-  };
-  filterCountEl.textContent = `Showing ${scores.length} of ${allScores.length}`;
-  for (const btn of filtersEl.querySelectorAll(".filter")) {
-    const key = btn.dataset.filter;
-    const n = counts[key] ?? 0;
-    btn.textContent =
-      key === "all" ? `All (${n})` : key === "unknown" ? `Unknown (${n})` : `MS${key} (${n})`;
-    btn.classList.toggle("active", key === versionFilter);
-  }
-
-  if (!scores.length) {
-    scoreListEl.textContent = "No scores match this filter.";
-    return;
-  }
-
-  scoreListEl.innerHTML = "";
-  for (const score of scores) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "score-item";
-    btn.dataset.path = score.path;
-    const badge = score.msLabel || "unknown";
-    btn.innerHTML = `
-      <span class="name">${escapeHtml(score.name)}</span>
-      <span class="meta">
-        <span class="badge ms-${escapeHtml(String(score.msMajor || "u"))}">${escapeHtml(badge)}</span>
-        ${escapeHtml(score.dir)}
-      </span>
-    `;
-    btn.addEventListener("click", async () => {
-      await renderScore({ path: score.path, filename: score.name });
-    });
-    scoreListEl.appendChild(btn);
-  }
-  highlightActive();
-}
-
-async function loadScores() {
+async function loadCatalog() {
   scoreListEl.textContent = "Loading…";
   try {
-    const res = await fetch("/api/scores");
+    const res = await fetch("/api/catalog");
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-    allScores = data.scores || [];
-    renderScoreList();
+    const scores = data.scores || [];
+    if (!scores.length) {
+      scoreListEl.textContent = "No seeded scores found.";
+      return;
+    }
+    scoreListEl.innerHTML = "";
+    for (const score of scores) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "score-item";
+      btn.dataset.slug = score.slug;
+      btn.innerHTML = `
+        <span class="name">${escapeHtml(score.title)}</span>
+        <span class="meta">${score.pageCount} pages · ${escapeHtml(formatDuration(score.durationMs))}</span>
+      `;
+      btn.addEventListener("click", () => loadScore(score.slug));
+      scoreListEl.appendChild(btn);
+    }
   } catch (err) {
     scoreListEl.textContent = String(err.message || err);
   }
 }
 
-filtersEl.addEventListener("click", (e) => {
-  const btn = e.target.closest(".filter");
-  if (!btn) return;
-  versionFilter = btn.dataset.filter;
-  renderScoreList();
+playBtn.addEventListener("click", async () => {
+  try {
+    await audioEl.play();
+    stopBtn.hidden = false;
+    setAudioStatus("Playing");
+    startPlayheadLoop();
+  } catch (err) {
+    setAudioStatus(String(err.message || err));
+  }
 });
 
-fileInput.addEventListener("change", async () => {
-  const file = fileInput.files?.[0];
-  if (!file) return;
-  await renderScore({ file, filename: file.name });
-  fileInput.value = "";
+stopBtn.addEventListener("click", () => {
+  stopPlayheadLoop();
+  audioEl.pause();
+  audioEl.currentTime = 0;
+  hidePlayheads();
+  setAudioStatus("Stopped");
 });
 
-playBtn.addEventListener("click", () => playAudio());
-stopBtn.addEventListener("click", () => stopAudio());
 audioEl.addEventListener("ended", () => {
-  cancelAnimationFrame(rafId);
+  stopPlayheadLoop();
   setAudioStatus("Finished");
 });
 audioEl.addEventListener("pause", () => {
-  cancelAnimationFrame(rafId);
+  stopPlayheadLoop();
   if (!audioEl.ended && audioEl.currentTime > 0) setAudioStatus("Paused");
 });
 audioEl.addEventListener("play", () => {
   setAudioStatus("Playing");
   startPlayheadLoop();
 });
-audioEl.addEventListener("seeked", () => {
-  updatePlayhead(audioEl.currentTime * 1000);
-});
-audioEl.addEventListener("timeupdate", () => {
-  if (audioEl.paused) updatePlayhead(audioEl.currentTime * 1000);
-});
+audioEl.addEventListener("seeked", () => updatePlayhead(audioEl.currentTime * 1000));
 
-reloadBtn.addEventListener("click", () => loadScores());
-loadScores();
+loadCatalog();
