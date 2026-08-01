@@ -260,10 +260,34 @@ select:hover,
   overflow: hidden;
 }
 
+.page-stage {
+  position: relative;
+  cursor: crosshair;
+}
+
 .page svg {
   display: block;
   width: 100%;
   height: auto;
+}
+
+.playhead {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 3px;
+  margin-left: -1px;
+  background: #e11d48;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.55);
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 3;
+  will-change: transform;
+}
+
+.cursor-hint {
+  color: var(--muted);
+  font-size: 0.9em;
 }
 
 @media (max-width: 860px) {

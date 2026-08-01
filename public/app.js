@@ -21,6 +21,10 @@ let activeFilename = "";
 let allScores = [];
 let versionFilter = "all";
 let audioObjectUrl = null;
+/** @type {null | { unit: number, elements: Record<string, any>, events: {elid:number, positionMs:number}[] }} */
+let timeline = null;
+let rafId = 0;
+let pageViews = []; // { page, wrap, svg, playhead }
 
 let webmscoreReady = WebMscore.ready.catch((err) => {
   console.warn("webmscore failed to init", err);
@@ -45,6 +49,7 @@ function escapeHtml(s) {
 }
 
 function clearAudio() {
+  cancelAnimationFrame(rafId);
   audioEl.pause();
   audioEl.removeAttribute("src");
   audioEl.load();
@@ -55,14 +60,27 @@ function clearAudio() {
   stopBtn.hidden = true;
   playBtn.disabled = false;
   setAudioStatus("");
+  hidePlayheads();
 }
 
-function showResult({ title, pages, method, fallbackFrom }) {
+function hidePlayheads() {
+  for (const pv of pageViews) {
+    pv.playhead.hidden = true;
+  }
+}
+
+function showResult({ title, pages, method, fallbackFrom, timeline: tl }) {
+  timeline = tl || null;
   metaEl.hidden = false;
   metaEl.innerHTML = `
     <strong>${escapeHtml(title || "Untitled")}</strong>
     · ${pages.length} page${pages.length === 1 ? "" : "s"}
     · via <code>${escapeHtml(method)}</code>
+    ${
+      timeline
+        ? `· <span class="cursor-hint">click score to seek</span>`
+        : ""
+    }
     ${
       fallbackFrom?.length
         ? `<div class="fallback">Fell back after: ${escapeHtml(
@@ -72,15 +90,45 @@ function showResult({ title, pages, method, fallbackFrom }) {
     }
   `;
   pagesEl.innerHTML = "";
-  for (const svg of pages) {
+  pageViews = [];
+  pages.forEach((svg, pageIndex) => {
     const wrap = document.createElement("div");
     wrap.className = "page";
-    wrap.innerHTML = svg;
+    wrap.dataset.page = String(pageIndex);
+    wrap.innerHTML = `
+      <div class="page-stage">
+        ${svg}
+        <div class="playhead" hidden></div>
+      </div>
+    `;
+    const stage = wrap.querySelector(".page-stage");
+    const svgEl = stage.querySelector("svg");
+    const playhead = stage.querySelector(".playhead");
+    stage.addEventListener("click", (ev) => onScoreClick(ev, pageIndex, svgEl));
     pagesEl.appendChild(wrap);
-  }
+    pageViews.push({ page: pageIndex, wrap, svg: svgEl, playhead, stage });
+  });
   playerBar.hidden = false;
   clearAudio();
-  setStatus("Rendered.");
+  setStatus(
+    timeline
+      ? "Rendered. Play audio to follow the cursor, or click the score to seek."
+      : "Rendered."
+  );
+}
+
+async function ensureTimeline() {
+  if (timeline?.events?.length) return timeline;
+  if (!activePath && !activeFile) return null;
+  setAudioStatus("Loading playback timeline…");
+  const fd = new FormData();
+  if (activeFile) fd.set("file", activeFile, activeFile.name);
+  if (activePath) fd.set("path", activePath);
+  const res = await fetch("/api/timeline", { method: "POST", body: fd });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  timeline = data.timeline;
+  return timeline;
 }
 
 async function bytesFromPath(filePath) {
@@ -121,7 +169,7 @@ async function renderWithWebmscore(data, filename) {
       pages.push(await score.saveSvg(i, true));
     }
     assertUsefulPages(pages);
-    return { title, pages, method: "webmscore" };
+    return { title, pages, method: "webmscore", timeline: null };
   } finally {
     score.destroy();
   }
@@ -147,6 +195,8 @@ async function renderScore({ file = null, path: filePath = null, filename = "" }
   metaEl.hidden = true;
   playerBar.hidden = true;
   pagesEl.innerHTML = "";
+  timeline = null;
+  pageViews = [];
   clearAudio();
 
   const prefer = preferEl.value;
@@ -160,6 +210,8 @@ async function renderScore({ file = null, path: filePath = null, filename = "" }
         : await bytesFromPath(filePath);
       const result = await renderWithWebmscore(data, name);
       showResult(result);
+      // Fetch CLI timeline in background for cursor support
+      ensureTimeline().catch(() => {});
       return;
     } catch (err) {
       errors.push(`webmscore: ${err.message || err}`);
@@ -183,7 +235,163 @@ async function renderScore({ file = null, path: filePath = null, filename = "" }
   }
 }
 
-async function playAudio() {
+function svgPointFromClient(svg, clientX, clientY) {
+  const pt = svg.createSVGPoint();
+  pt.x = clientX;
+  pt.y = clientY;
+  const ctm = svg.getScreenCTM();
+  if (!ctm) return null;
+  return pt.matrixTransform(ctm.inverse());
+}
+
+function cursorAtMs(ms) {
+  if (!timeline?.events?.length) return null;
+  const { events, elements, unit } = timeline;
+  let i = 0;
+  while (i + 1 < events.length && events[i + 1].positionMs <= ms) i++;
+  const cur = events[i];
+  const next = events[i + 1] || null;
+  const el = elements[String(cur.elid)] || elements[cur.elid];
+  if (!el) return null;
+
+  let x = el.x;
+  if (next) {
+    const nel = elements[String(next.elid)] || elements[next.elid];
+    if (nel && nel.page === el.page && Math.abs(nel.y - el.y) < el.sy * 0.5) {
+      const span = Math.max(1, next.positionMs - cur.positionMs);
+      const t = Math.min(1, Math.max(0, (ms - cur.positionMs) / span));
+      x = el.x + (nel.x - el.x) * t;
+    } else {
+      // end of system: ease across current segment width
+      const span = Math.max(1, (next?.positionMs || cur.positionMs + 500) - cur.positionMs);
+      const t = Math.min(1, Math.max(0, (ms - cur.positionMs) / span));
+      x = el.x + el.sx * t * 0.85;
+    }
+  }
+
+  return {
+    page: el.page,
+    x: x / unit,
+    y: el.y / unit,
+    h: el.sy / unit,
+  };
+}
+
+function updatePlayhead(ms) {
+  const cur = cursorAtMs(ms);
+  if (!cur) {
+    hidePlayheads();
+    return;
+  }
+  for (const pv of pageViews) {
+    if (pv.page !== cur.page) {
+      pv.playhead.hidden = true;
+      continue;
+    }
+    const vb = pv.svg.viewBox.baseVal;
+    const svgW = vb.width || pv.svg.width.baseVal.value;
+    const svgH = vb.height || pv.svg.height.baseVal.value;
+    // Position relative to the displayed SVG box
+    const rect = pv.svg.getBoundingClientRect();
+    const stageRect = pv.stage.getBoundingClientRect();
+    const scaleX = rect.width / svgW;
+    const scaleY = rect.height / svgH;
+    const left = rect.left - stageRect.left + cur.x * scaleX;
+    const top = rect.top - stageRect.top + cur.y * scaleY;
+    const height = cur.h * scaleY;
+    pv.playhead.hidden = false;
+    pv.playhead.style.transform = `translate(${left}px, ${top}px)`;
+    pv.playhead.style.height = `${Math.max(24, height)}px`;
+  }
+}
+
+function tickPlayhead() {
+  if (!audioEl.paused || audioEl.currentTime > 0) {
+    updatePlayhead(audioEl.currentTime * 1000);
+  }
+  if (!audioEl.paused && !audioEl.ended) {
+    rafId = requestAnimationFrame(tickPlayhead);
+  }
+}
+
+async function onScoreClick(ev, pageIndex, svg) {
+  if (!timeline) {
+    try {
+      await ensureTimeline();
+    } catch (err) {
+      setAudioStatus(String(err.message || err));
+      return;
+    }
+  }
+  if (!timeline?.events?.length) return;
+
+  const pt = svgPointFromClient(svg, ev.clientX, ev.clientY);
+  if (!pt) return;
+  const unit = timeline.unit || 12;
+  const mx = pt.x * unit;
+  const my = pt.y * unit;
+
+  let best = null;
+  let bestDist = Infinity;
+  for (const evnt of timeline.events) {
+    const el = timeline.elements[String(evnt.elid)] || timeline.elements[evnt.elid];
+    if (!el || el.page !== pageIndex) continue;
+    // Prefer hits inside the segment box; else nearest on same system row
+    const inY = my >= el.y - el.sy * 0.15 && my <= el.y + el.sy * 1.05;
+    if (!inY) continue;
+    const cx = el.x + el.sx * 0.15;
+    const dx = mx < el.x ? el.x - mx : mx > el.x + el.sx ? mx - (el.x + el.sx) : 0;
+    const dist = dx;
+    const inside = mx >= el.x && mx <= el.x + el.sx;
+    const score = inside ? dist - 1e9 : dist;
+    if (score < bestDist) {
+      bestDist = score;
+      // interpolate within segment if click is inside
+      let ms = evnt.positionMs;
+      if (inside && el.sx > 0) {
+        const t = Math.min(1, Math.max(0, (mx - el.x) / el.sx));
+        // find next event on same system for span
+        const idx = timeline.events.indexOf(evnt);
+        const next = timeline.events[idx + 1];
+        if (next) {
+          ms = evnt.positionMs + (next.positionMs - evnt.positionMs) * t;
+        }
+      }
+      best = ms;
+    }
+  }
+
+  if (best == null) return;
+
+  const seekSec = best / 1000;
+  updatePlayhead(best);
+
+  // Ensure audio is loaded, then seek
+  if (!audioEl.src) {
+    setAudioStatus("Loading audio to seek…");
+    await playAudio({ seekTo: seekSec, autoplay: true });
+    return;
+  }
+  audioEl.currentTime = seekSec;
+  updatePlayhead(best);
+  if (audioEl.paused) {
+    try {
+      await audioEl.play();
+      startPlayheadLoop();
+    } catch {
+      setAudioStatus(`Seeked to ${seekSec.toFixed(1)}s — press Play`);
+    }
+  } else {
+    setAudioStatus(`Seeked to ${seekSec.toFixed(1)}s`);
+  }
+}
+
+function startPlayheadLoop() {
+  cancelAnimationFrame(rafId);
+  rafId = requestAnimationFrame(tickPlayhead);
+}
+
+async function playAudio({ seekTo = null, autoplay = true } = {}) {
   if (!activePath && !activeFile) {
     setAudioStatus("Load a score first.");
     return;
@@ -191,21 +399,32 @@ async function playAudio() {
   playBtn.disabled = true;
   setAudioStatus("Exporting audio via MuseScore…");
   try {
-    const fd = new FormData();
-    if (activeFile) fd.set("file", activeFile, activeFile.name);
-    if (activePath) fd.set("path", activePath);
-    const res = await fetch("/api/audio", { method: "POST", body: fd });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      throw new Error(data.error || `HTTP ${res.status}`);
+    await ensureTimeline().catch(() => null);
+
+    if (!audioEl.src) {
+      const fd = new FormData();
+      if (activeFile) fd.set("file", activeFile, activeFile.name);
+      if (activePath) fd.set("path", activePath);
+      const res = await fetch("/api/audio", { method: "POST", body: fd });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+      const blob = await res.blob();
+      if (audioObjectUrl) URL.revokeObjectURL(audioObjectUrl);
+      audioObjectUrl = URL.createObjectURL(blob);
+      audioEl.src = audioObjectUrl;
     }
-    const blob = await res.blob();
-    if (audioObjectUrl) URL.revokeObjectURL(audioObjectUrl);
-    audioObjectUrl = URL.createObjectURL(blob);
-    audioEl.src = audioObjectUrl;
+
     stopBtn.hidden = false;
-    setAudioStatus("Playing");
-    await audioEl.play();
+    if (seekTo != null) audioEl.currentTime = seekTo;
+    if (autoplay) {
+      await audioEl.play();
+      setAudioStatus("Playing");
+      startPlayheadLoop();
+    } else {
+      updatePlayhead((seekTo ?? audioEl.currentTime) * 1000);
+    }
   } catch (err) {
     setAudioStatus(String(err.message || err));
   } finally {
@@ -214,8 +433,10 @@ async function playAudio() {
 }
 
 function stopAudio() {
+  cancelAnimationFrame(rafId);
   audioEl.pause();
   audioEl.currentTime = 0;
+  hidePlayheads();
   setAudioStatus("Stopped");
 }
 
@@ -308,11 +529,24 @@ fileInput.addEventListener("change", async () => {
 
 playBtn.addEventListener("click", () => playAudio());
 stopBtn.addEventListener("click", () => stopAudio());
-audioEl.addEventListener("ended", () => setAudioStatus("Finished"));
+audioEl.addEventListener("ended", () => {
+  cancelAnimationFrame(rafId);
+  setAudioStatus("Finished");
+});
 audioEl.addEventListener("pause", () => {
+  cancelAnimationFrame(rafId);
   if (!audioEl.ended && audioEl.currentTime > 0) setAudioStatus("Paused");
 });
-audioEl.addEventListener("play", () => setAudioStatus("Playing"));
+audioEl.addEventListener("play", () => {
+  setAudioStatus("Playing");
+  startPlayheadLoop();
+});
+audioEl.addEventListener("seeked", () => {
+  updatePlayhead(audioEl.currentTime * 1000);
+});
+audioEl.addEventListener("timeupdate", () => {
+  if (audioEl.paused) updatePlayhead(audioEl.currentTime * 1000);
+});
 
 reloadBtn.addEventListener("click", () => loadScores());
 loadScores();

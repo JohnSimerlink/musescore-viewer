@@ -14,17 +14,27 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 5177);
 const CACHE_DIR = path.join(os.tmpdir(), "msviewer-cache");
 
-const SCORE_DIRS = [
-  path.join(os.homedir(), "Documents/MuseScore4/Scores"),
-  path.join(os.homedir(), "Documents/incommon"),
-].filter((d) => existsSync(d));
+const SCORE_DIRS = (
+  process.env.SCORE_DIRS
+    ? process.env.SCORE_DIRS.split(path.delimiter)
+    : [
+        path.join(os.homedir(), "Documents/MuseScore4/Scores"),
+        path.join(os.homedir(), "Documents/incommon"),
+      ]
+).filter((d) => d && existsSync(d));
 
 const MSCORE_CANDIDATES = [
+  process.env.MSCORE_BIN,
   "/Applications/MuseScore 4.app/Contents/MacOS/mscore",
   "/Applications/MuseScore 3.app/Contents/MacOS/mscore",
-];
+  "/usr/bin/mscore3",
+  "/usr/bin/mscore",
+  "/usr/bin/musescore3",
+  "/usr/bin/musescore",
+].filter(Boolean);
 
 const mscoreBin = MSCORE_CANDIDATES.find((p) => existsSync(p));
+const useXvfb = process.env.MSCORE_USE_XVFB === "1" || process.platform === "linux";
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 80 * 1024 * 1024 },
@@ -152,9 +162,20 @@ function resolveListedScore(filePath) {
 
 function run(cmd, args) {
   return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, {
+    let finalCmd = cmd;
+    let finalArgs = args;
+    // Headless Linux (Railway/Docker): wrap MuseScore in Xvfb when needed.
+    if (
+      useXvfb &&
+      existsSync("/usr/bin/xvfb-run") &&
+      (cmd.includes("mscore") || cmd.includes("musescore"))
+    ) {
+      finalCmd = "xvfb-run";
+      finalArgs = ["-a", cmd, ...args];
+    }
+    const child = spawn(finalCmd, finalArgs, {
       stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env },
+      env: { ...process.env, QT_QPA_PLATFORM: process.env.QT_QPA_PLATFORM || "offscreen" },
     });
     let stdout = "";
     let stderr = "";
@@ -192,6 +213,48 @@ async function resolveInputPath(req) {
   throw err;
 }
 
+/** Parse MuseScore .spos / .mpos XML into a playback timeline. */
+function parsePosXml(xml) {
+  const elements = {};
+  for (const m of xml.matchAll(/<element\s+([^/>]+)\/>/g)) {
+    const attrs = Object.fromEntries(
+      [...m[1].matchAll(/(\w+)="([^"]*)"/g)].map(([, k, v]) => [k, v])
+    );
+    const id = Number(attrs.id);
+    elements[id] = {
+      id,
+      x: Number(attrs.x),
+      y: Number(attrs.y),
+      sx: Number(attrs.sx),
+      sy: Number(attrs.sy),
+      page: Number(attrs.page),
+    };
+  }
+  const events = [];
+  for (const m of xml.matchAll(
+    /<event\s+elid="(\d+)"\s+position="(\d+)"\s*\/>/g
+  )) {
+    events.push({ elid: Number(m[1]), positionMs: Number(m[2]) });
+  }
+  events.sort((a, b) => a.positionMs - b.positionMs);
+  return {
+    // MuseScore exports spos/mpos in 1/12 SVG/PNG pixel units
+    unit: 12,
+    elements,
+    events,
+  };
+}
+
+async function exportTimeline(inputPath, tmpDir) {
+  const outSpos = path.join(tmpDir, "score.spos");
+  await run(mscoreBin, ["-o", outSpos, inputPath]);
+  const sposFile =
+    (await fs.readdir(tmpDir)).find((f) => f.endsWith(".spos")) || null;
+  if (!sposFile) throw new Error("MuseScore produced no .spos timeline");
+  const xml = await fs.readFile(path.join(tmpDir, sposFile), "utf8");
+  return parsePosXml(xml);
+}
+
 async function renderWithMuseScoreCli(inputPath) {
   if (!mscoreBin) {
     throw new Error("MuseScore CLI not found (looked for MuseScore 3/4 apps)");
@@ -208,10 +271,17 @@ async function renderWithMuseScoreCli(inputPath) {
     for (const f of files) {
       pages.push(await fs.readFile(path.join(tmp, f), "utf8"));
     }
+    let timeline = null;
+    try {
+      timeline = await exportTimeline(inputPath, tmp);
+    } catch (err) {
+      console.warn("timeline export failed:", err.message || err);
+    }
     return {
       title: path.basename(inputPath, path.extname(inputPath)),
       pages,
       method: "musescore-cli",
+      timeline,
     };
   } finally {
     await fs.rm(tmp, { recursive: true, force: true }).catch(() => {});
@@ -314,6 +384,25 @@ app.post("/api/audio", upload.single("file"), async (req, res) => {
     res.status(err.status || 500).json({ error: String(err.message || err) });
   } finally {
     if (tmpUpload) await fs.rm(tmpUpload, { force: true }).catch(() => {});
+  }
+});
+
+/** Segment timeline for playback cursor / click-to-seek. */
+app.post("/api/timeline", upload.single("file"), async (req, res) => {
+  let tmpUpload = null;
+  let tmp = null;
+  try {
+    if (!mscoreBin) throw new Error("MuseScore CLI not found");
+    const resolved = await resolveInputPath(req);
+    tmpUpload = resolved.tmpUpload;
+    tmp = await fs.mkdtemp(path.join(os.tmpdir(), "msviewer-timeline-"));
+    const timeline = await exportTimeline(resolved.inputPath, tmp);
+    res.json({ timeline });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: String(err.message || err) });
+  } finally {
+    if (tmpUpload) await fs.rm(tmpUpload, { force: true }).catch(() => {});
+    if (tmp) await fs.rm(tmp, { recursive: true, force: true }).catch(() => {});
   }
 });
 
