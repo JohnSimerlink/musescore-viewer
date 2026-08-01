@@ -10,8 +10,58 @@ const SEED_DIR = path.join(__dirname, "public", "seed");
 const AGENT_URL = (process.env.COPLAND_AGENT_URL || "http://127.0.0.1:5178").replace(/\/$/, "");
 
 const app = express();
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({ limit: "2mb" }));
 app.use(express.static(path.join(__dirname, "public")));
+
+async function proxyJson(req, res, agentPath, { method } = {}) {
+  try {
+    const r = await fetch(`${AGENT_URL}${agentPath}`, {
+      method: method || req.method,
+      headers: { "Content-Type": "application/json" },
+      body: ["GET", "HEAD"].includes(method || req.method)
+        ? undefined
+        : JSON.stringify(req.body || {}),
+      signal: AbortSignal.timeout(120_000),
+    });
+    const text = await r.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = { error: "invalid_agent_response", raw: text.slice(0, 500) };
+    }
+    res.status(r.status).json(data);
+  } catch (err) {
+    res.status(503).json({
+      error: "agent_unreachable",
+      detail: String(err.message || err),
+      reply:
+        "Copland agent is not reachable. Start it with `npm run agent` (Python sidecar on :5178).",
+    });
+  }
+}
+
+async function proxyBinary(req, res, agentPath) {
+  try {
+    const r = await fetch(`${AGENT_URL}${agentPath}`, {
+      method: "GET",
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (!r.ok) {
+      const text = await r.text();
+      return res.status(r.status).send(text);
+    }
+    const ctype = r.headers.get("content-type") || "application/octet-stream";
+    res.setHeader("Content-Type", ctype);
+    const buf = Buffer.from(await r.arrayBuffer());
+    res.status(r.status).send(buf);
+  } catch (err) {
+    res.status(503).json({
+      error: "agent_unreachable",
+      detail: String(err.message || err),
+    });
+  }
+}
 
 app.get("/api/health", async (_req, res) => {
   let agent = { ok: false, reachable: false };
@@ -43,32 +93,23 @@ app.get("/api/catalog", async (_req, res) => {
   }
 });
 
-app.post("/api/chat", async (req, res) => {
-  try {
-    const r = await fetch(`${AGENT_URL}/api/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(req.body || {}),
-      signal: AbortSignal.timeout(60_000),
-    });
-    const text = await r.text();
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      data = { reply: text, error: "invalid_agent_response" };
-    }
-    res.status(r.status).json(data);
-  } catch (err) {
-    res.status(503).json({
-      reply:
-        "Copland agent is not reachable. Start it with `npm run agent` (Python sidecar on :5178).",
-      error: "agent_unreachable",
-      detail: String(err.message || err),
-      tool_calls: [],
-      planned_ops: [],
-    });
-  }
+app.post("/api/chat", (req, res) => proxyJson(req, res, "/api/chat"));
+app.post("/api/session/open", (req, res) => proxyJson(req, res, "/api/session/open"));
+app.post("/api/session/reset", (req, res) => proxyJson(req, res, "/api/session/reset"));
+app.post("/api/session/apply", (req, res) => proxyJson(req, res, "/api/session/apply"));
+app.get("/api/session/:slug", (req, res) =>
+  proxyJson(req, res, `/api/session/${encodeURIComponent(req.params.slug)}`, { method: "GET" }),
+);
+app.post("/api/session/:slug/render", (req, res) =>
+  proxyJson(req, res, `/api/session/${encodeURIComponent(req.params.slug)}/render`),
+);
+app.get("/api/session/:slug/assets/:name", (req, res) => {
+  const q = req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : "";
+  return proxyBinary(
+    req,
+    res,
+    `/api/session/${encodeURIComponent(req.params.slug)}/assets/${encodeURIComponent(req.params.name)}${q}`,
+  );
 });
 
 app.listen(PORT, () => {

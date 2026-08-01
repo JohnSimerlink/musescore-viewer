@@ -17,7 +17,12 @@ const commandSend = document.getElementById("commandSend");
 const commandReply = document.getElementById("commandReply");
 const commandSelection = document.getElementById("commandSelection");
 const commandTranscript = document.getElementById("commandTranscript");
-const transcriptToggle = document.getElementById("transcriptToggle");
+const editToolbar = document.getElementById("editToolbar");
+const durationSelect = document.getElementById("durationSelect");
+const renderStatus = document.getElementById("renderStatus");
+const agentRail = document.getElementById("agentRail");
+const agentExpandBtn = document.getElementById("agentExpandBtn");
+const agentBackBtn = document.getElementById("agentBackBtn");
 
 let activeSlug = null;
 let activeTitle = null;
@@ -33,6 +38,8 @@ let selection = null;
 /** @type {{role:string, content:string}[]} */
 let chatHistory = [];
 let anchorMeasure = null;
+let seedMeta = null;
+let scoreRevision = 0;
 
 function setStatus(text, isError = false) {
   statusEl.textContent = text;
@@ -41,6 +48,10 @@ function setStatus(text, isError = false) {
 
 function setAudioStatus(text) {
   audioStatus.textContent = text || "";
+}
+
+function setRenderStatus(text) {
+  renderStatus.textContent = text || "";
 }
 
 function escapeHtml(s) {
@@ -86,6 +97,42 @@ function initTheme() {
   themeToggle.addEventListener("click", () => {
     applyTheme(currentTheme() === "dark" ? "light" : "dark");
   });
+}
+
+/* ---------- Agent rail (desktop) / bottom dock + fullscreen (mobile) ---------- */
+
+function isMobileAgentLayout() {
+  return window.matchMedia("(max-width: 960px)").matches;
+}
+
+function setAgentExpanded(expanded) {
+  const on = Boolean(expanded) && isMobileAgentLayout();
+  document.body.classList.toggle("agent-expanded", on);
+  agentExpandBtn.hidden = !isMobileAgentLayout() || on;
+  agentBackBtn.hidden = !on;
+  agentExpandBtn.setAttribute("aria-expanded", on ? "true" : "false");
+  if (on) {
+    commandInput.focus();
+  }
+}
+
+function initAgentRail() {
+  const mq = window.matchMedia("(max-width: 960px)");
+  const sync = () => {
+    if (!mq.matches) {
+      document.body.classList.remove("agent-expanded");
+      agentExpandBtn.hidden = true;
+      agentBackBtn.hidden = true;
+      return;
+    }
+    const expanded = document.body.classList.contains("agent-expanded");
+    agentExpandBtn.hidden = expanded;
+    agentBackBtn.hidden = !expanded;
+  };
+  sync();
+  mq.addEventListener("change", sync);
+  agentExpandBtn.addEventListener("click", () => setAgentExpanded(true));
+  agentBackBtn.addEventListener("click", () => setAgentExpanded(false));
 }
 
 /* ---------- Playhead ---------- */
@@ -408,7 +455,122 @@ function setSelectMode(on) {
   }
 }
 
-/* ---------- Score load ---------- */
+/* ---------- Score load / refresh ---------- */
+
+function mountPages(svgTexts) {
+  pagesEl.innerHTML = "";
+  pageViews = [];
+  svgTexts.forEach((svg, pageIndex) => {
+    const wrap = document.createElement("div");
+    wrap.className = "page";
+    wrap.innerHTML = `
+      <div class="page-stage">
+        ${svg}
+        <div class="measure-overlay"></div>
+        <div class="playhead" hidden></div>
+      </div>
+    `;
+    const stage = wrap.querySelector(".page-stage");
+    const svgEl = stage.querySelector("svg");
+    const playhead = stage.querySelector(".playhead");
+    const overlay = stage.querySelector(".measure-overlay");
+    stage.addEventListener("click", (ev) => onScoreClick(ev, pageIndex, svgEl));
+    pagesEl.appendChild(wrap);
+    pageViews.push({ page: pageIndex, wrap, svg: svgEl, playhead, stage, overlay });
+  });
+  setSelectMode(selectMode);
+  paintSelectionOverlays();
+}
+
+async function loadSeedVisuals(slug, meta) {
+  const [timelineRes, ...pageRes] = await Promise.all([
+    fetch(`/seed/${slug}/${meta.timeline}`),
+    ...meta.pages.map((p) => fetch(`/seed/${slug}/${p}`)),
+  ]);
+  if (!timelineRes.ok) throw new Error("timeline missing");
+  timeline = await timelineRes.json();
+  measures = buildMeasures(timeline);
+  const pages = [];
+  for (const res of pageRes) {
+    if (!res.ok) throw new Error("page missing");
+    pages.push(await res.text());
+  }
+  mountPages(pages);
+  audioEl.src = `/seed/${slug}/${meta.audio}`;
+  return pages.length;
+}
+
+async function applyScoreAssets(assets) {
+  if (!assets || !activeSlug) return;
+  scoreRevision = assets.revision || scoreRevision;
+  const render = assets.render || {};
+  if (render.ok && Array.isArray(render.pages) && render.pages.length) {
+    const pageTexts = [];
+    for (const url of render.pages) {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`render page HTTP ${res.status}`);
+      pageTexts.push(await res.text());
+    }
+    if (render.timeline_url) {
+      const tr = await fetch(render.timeline_url);
+      if (tr.ok) {
+        timeline = await tr.json();
+        measures = buildMeasures(timeline);
+      }
+    }
+    if (render.audio_url) {
+      const t = audioEl.currentTime;
+      const wasPlaying = !audioEl.paused;
+      audioEl.src = render.audio_url;
+      audioEl.currentTime = t;
+      if (wasPlaying) {
+        try {
+          await audioEl.play();
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+    mountPages(pageTexts);
+    setRenderStatus(`Rendered v${scoreRevision} via MuseScore · ${assets.summary?.note_count ?? "?"} notes`);
+    setStatus("Score updated.");
+  } else {
+    setRenderStatus(
+      render.detail ||
+        "Edits applied in memory. SVG re-render needs MuseScore CLI locally (seed pages unchanged).",
+    );
+    if (assets.summary) {
+      setStatus(
+        `Applied (model: ${assets.summary.measure_count} measures, ${assets.summary.note_count} notes).`,
+      );
+    }
+  }
+
+  if (assets.selection?.measure_start != null) {
+    setSelectionRange(assets.selection.measure_start, assets.selection.measure_end);
+  }
+}
+
+async function openSession(slug, title) {
+  try {
+    const res = await fetch("/api/session/open", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ score_slug: slug, score_title: title }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || data.error || `session HTTP ${res.status}`);
+    setRenderStatus(
+      data.render?.mscore_available
+        ? "Edit session ready · MuseScore CLI available for re-render"
+        : "Edit session ready · MuseScore CLI unavailable (mutations apply; seed SVG until CLI present)",
+    );
+    return data;
+  } catch (err) {
+    setRenderStatus(String(err.message || err));
+    return null;
+  }
+}
 
 async function loadScore(slug) {
   activeSlug = slug;
@@ -416,6 +578,7 @@ async function loadScore(slug) {
   setStatus("Loading score…");
   metaEl.hidden = true;
   playerBar.hidden = true;
+  editToolbar.hidden = true;
   pagesEl.innerHTML = "";
   pageViews = [];
   timeline = null;
@@ -430,58 +593,29 @@ async function loadScore(slug) {
     const metaRes = await fetch(`/seed/${slug}/meta.json`);
     if (!metaRes.ok) throw new Error(`meta HTTP ${metaRes.status}`);
     const meta = await metaRes.json();
+    seedMeta = meta;
     activeTitle = meta.title || slug;
 
-    const [timelineRes, ...pageRes] = await Promise.all([
-      fetch(`/seed/${slug}/${meta.timeline}`),
-      ...meta.pages.map((p) => fetch(`/seed/${slug}/${p}`)),
-    ]);
-    if (!timelineRes.ok) throw new Error("timeline missing");
-    timeline = await timelineRes.json();
-    measures = buildMeasures(timeline);
-
-    const pages = [];
-    for (const res of pageRes) {
-      if (!res.ok) throw new Error("page missing");
-      pages.push(await res.text());
-    }
+    const pageCount = await loadSeedVisuals(slug, meta);
 
     metaEl.hidden = false;
     metaEl.innerHTML = `
       <strong>${escapeHtml(meta.title)}</strong>
-      · ${pages.length} page${pages.length === 1 ? "" : "s"}
+      · ${pageCount} page${pageCount === 1 ? "" : "s"}
       · ${escapeHtml(formatDuration(meta.durationMs))}
       · ~${measures.length} measures
       · <span class="cursor-hint">click to seek · Select / Shift+click for measures</span>
     `;
 
-    pages.forEach((svg, pageIndex) => {
-      const wrap = document.createElement("div");
-      wrap.className = "page";
-      wrap.innerHTML = `
-        <div class="page-stage">
-          ${svg}
-          <div class="measure-overlay"></div>
-          <div class="playhead" hidden></div>
-        </div>
-      `;
-      const stage = wrap.querySelector(".page-stage");
-      const svgEl = stage.querySelector("svg");
-      const playhead = stage.querySelector(".playhead");
-      const overlay = stage.querySelector(".measure-overlay");
-      stage.addEventListener("click", (ev) => onScoreClick(ev, pageIndex, svgEl));
-      pagesEl.appendChild(wrap);
-      pageViews.push({ page: pageIndex, wrap, svg: svgEl, playhead, stage, overlay });
-    });
-
-    audioEl.src = `/seed/${slug}/${meta.audio}`;
     playerBar.hidden = false;
+    editToolbar.hidden = false;
     stopBtn.hidden = true;
     setSelectMode(selectMode);
     setAudioStatus("Ready");
     setStatus("Loaded. Press Play, or click the score to jump.");
     updatePlayhead(0);
     window.addEventListener("resize", paintSelectionOverlays);
+    await openSession(slug, activeTitle);
   } catch (err) {
     setStatus(String(err.message || err), true);
   }
@@ -522,7 +656,7 @@ async function loadCatalog() {
   }
 }
 
-/* ---------- Command bar / agent ---------- */
+/* ---------- Command rail / agent ---------- */
 
 function showReply(text, isError = false) {
   commandReply.hidden = false;
@@ -532,12 +666,10 @@ function showReply(text, isError = false) {
 
 function renderTranscript() {
   if (!chatHistory.length) {
-    transcriptToggle.hidden = true;
-    commandTranscript.hidden = true;
-    commandTranscript.innerHTML = "";
+    commandTranscript.innerHTML =
+      '<div class="transcript-empty">Ask Copland to edit the score. Selection is sent with each command.</div>';
     return;
   }
-  transcriptToggle.hidden = false;
   commandTranscript.innerHTML = chatHistory
     .map(
       (t) => `
@@ -547,6 +679,7 @@ function renderTranscript() {
       </div>`,
     )
     .join("");
+  commandTranscript.scrollTop = commandTranscript.scrollHeight;
 }
 
 async function submitCommand(message) {
@@ -583,7 +716,23 @@ async function submitCommand(message) {
       const ops = data.planned_ops
         .map((op) => `${op.tool}: ${op.detail || op.status}`)
         .join(" · ");
-      showReply(`${reply}\n\nPlanned: ${ops}`, false);
+      showReply(`${reply}\n\n${ops}`, false);
+    }
+
+    if (data.score_assets) {
+      await applyScoreAssets(data.score_assets);
+    }
+
+    for (const op of data.planned_ops || []) {
+      if (op.tool === "play_selection" && op.status === "applied") {
+        playSelectionRange();
+      }
+      if (op.tool === "set_selection" && op.status === "applied") {
+        setSelectionRange(op.args.measure_start, op.args.measure_end);
+      }
+      if (op.tool === "clear_selection" && op.status === "applied") {
+        clearSelection();
+      }
     }
   } catch (err) {
     showReply(String(err.message || err), true);
@@ -599,10 +748,152 @@ commandForm.addEventListener("submit", (ev) => {
   submitCommand(value);
 });
 
-transcriptToggle.addEventListener("click", () => {
-  const open = commandTranscript.hidden;
-  commandTranscript.hidden = !open;
-  transcriptToggle.setAttribute("aria-expanded", open ? "true" : "false");
+commandInput.addEventListener("keydown", (ev) => {
+  if (ev.key === "Enter" && !ev.shiftKey) {
+    ev.preventDefault();
+    commandForm.requestSubmit();
+  }
+});
+
+/* ---------- Click edit tools ---------- */
+
+function requireSelection() {
+  if (!selection) {
+    showReply("Select measures first (Select mode or Shift+click).", true);
+    return null;
+  }
+  return selectionContext();
+}
+
+async function applyTool(tool, args = {}) {
+  if (!activeSlug) {
+    showReply("Load a score first.", true);
+    return;
+  }
+  const body = {
+    tool,
+    args,
+    score_slug: activeSlug,
+    score_title: activeTitle,
+    selection: selectionContext(),
+  };
+  showReply(`Applying ${tool}…`);
+  try {
+    const res = await fetch("/api/session/apply", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || data.error || `HTTP ${res.status}`);
+    const op = data.op || {};
+    showReply(op.detail || op.status || "Done", op.status === "error");
+    if (data.score_assets) await applyScoreAssets(data.score_assets);
+    if (tool === "play_selection" && op.status === "applied") playSelectionRange();
+    if (tool === "clear_selection") clearSelection();
+  } catch (err) {
+    showReply(String(err.message || err), true);
+  }
+}
+
+function playSelectionRange() {
+  if (!selection || !measures.length) return;
+  const picked = measures.filter(
+    (m) => m.measure >= selection.measureStart && m.measure <= selection.measureEnd,
+  );
+  if (!picked.length) return;
+  const startMs = Math.min(...picked.map((m) => m.startMs));
+  audioEl.currentTime = startMs / 1000;
+  audioEl
+    .play()
+    .then(() => {
+      setAudioStatus("Playing selection");
+      startPlayheadLoop();
+    })
+    .catch((err) => setAudioStatus(String(err.message || err)));
+}
+
+editToolbar.addEventListener("click", async (ev) => {
+  const btn = ev.target.closest("[data-edit]");
+  if (!btn) return;
+  const action = btn.getAttribute("data-edit");
+  switch (action) {
+    case "transpose-up":
+      if (!requireSelection()) return;
+      await applyTool("transpose_selection", { semitones: 1 });
+      break;
+    case "transpose-down":
+      if (!requireSelection()) return;
+      await applyTool("transpose_selection", { semitones: -1 });
+      break;
+    case "delete-selection":
+      if (!requireSelection()) return;
+      await applyTool("delete_selection", {});
+      break;
+    case "duplicate":
+      if (!requireSelection()) return;
+      await applyTool("duplicate_measures", {
+        measure_start: selection.measureStart,
+        measure_end: selection.measureEnd,
+        insert_after: selection.measureEnd,
+      });
+      break;
+    case "set-duration":
+      if (!requireSelection()) return;
+      await applyTool("set_note_duration", { duration: durationSelect.value });
+      break;
+    case "insert-measure":
+      await applyTool("insert_measures", {
+        count: 1,
+        after_measure: selection?.measureEnd || 0,
+      });
+      break;
+    case "delete-measures":
+      if (!requireSelection()) return;
+      await applyTool("delete_measures", {
+        measure_start: selection.measureStart,
+        measure_end: selection.measureEnd,
+      });
+      break;
+    case "copy":
+      if (!requireSelection()) return;
+      await applyTool("copy_selection", {});
+      break;
+    case "cut":
+      if (!requireSelection()) return;
+      await applyTool("cut_selection", {});
+      break;
+    case "paste":
+      await applyTool("paste_selection", {
+        target: selection?.measureEnd || 0,
+      });
+      break;
+    case "undo":
+      await applyTool("undo", {});
+      break;
+    case "redo":
+      await applyTool("redo", {});
+      break;
+    case "play-selection":
+      if (!requireSelection()) return;
+      await applyTool("play_selection", {});
+      break;
+    case "reset-session": {
+      if (!activeSlug) return;
+      const res = await fetch("/api/session/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ score_slug: activeSlug, score_title: activeTitle }),
+      });
+      const data = await res.json();
+      if (seedMeta) await loadSeedVisuals(activeSlug, seedMeta);
+      showReply("Score session reset to seed.");
+      setRenderStatus(data.render?.detail || "Reset");
+      break;
+    }
+    default:
+      break;
+  }
 });
 
 /* ---------- Transport ---------- */
@@ -630,9 +921,40 @@ selectModeBtn.addEventListener("click", () => setSelectMode(!selectMode));
 clearSelBtn.addEventListener("click", () => clearSelection());
 
 document.addEventListener("keydown", (ev) => {
+  const typing =
+    ev.target instanceof HTMLElement &&
+    (ev.target.tagName === "INPUT" ||
+      ev.target.tagName === "TEXTAREA" ||
+      ev.target.isContentEditable);
   if (ev.key === "Escape") {
+    if (document.body.classList.contains("agent-expanded")) {
+      setAgentExpanded(false);
+      return;
+    }
     if (selectMode) setSelectMode(false);
     clearSelection();
+    return;
+  }
+  if (typing) return;
+  if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === "z") {
+    ev.preventDefault();
+    applyTool(ev.shiftKey ? "redo" : "undo", {});
+  }
+  if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === "c" && selection) {
+    ev.preventDefault();
+    applyTool("copy_selection", {});
+  }
+  if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === "x" && selection) {
+    ev.preventDefault();
+    applyTool("cut_selection", {});
+  }
+  if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === "v") {
+    ev.preventDefault();
+    applyTool("paste_selection", { target: selection?.measureEnd || 0 });
+  }
+  if ((ev.key === "Delete" || ev.key === "Backspace") && selection) {
+    ev.preventDefault();
+    applyTool("delete_selection", {});
   }
 });
 
@@ -651,4 +973,6 @@ audioEl.addEventListener("play", () => {
 audioEl.addEventListener("seeked", () => updatePlayhead(audioEl.currentTime * 1000));
 
 initTheme();
+initAgentRail();
+renderTranscript();
 loadCatalog();

@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "auto/**", "codex/**"]
+  pull_request:
+
+jobs:
+  agent-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agent
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install -r requirements.txt
+      - name: Pytest
+        run: .venv/bin/pytest -q

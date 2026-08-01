@@ -50,3 +50,18 @@ class ChatResponse(BaseModel):
     selection: SelectionContext | None = None
     model: str | None = None
     error: str | None = None
+    score_assets: dict[str, Any] | None = None
+
+
+class ApplyRequest(BaseModel):
+    tool: str
+    args: dict[str, Any] = Field(default_factory=dict)
+    score_slug: str
+    score_title: str | None = None
+    selection: SelectionContext | None = None
+
+
+class ApplyResponse(BaseModel):
+    op: PlannedOp
+    score_assets: dict[str, Any] | None = None
+    error: str | None = None

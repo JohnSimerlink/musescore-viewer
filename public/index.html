@@ -46,6 +46,7 @@
         <h2>Scores</h2>
         <div id="scoreList" class="score-list">Loading…</div>
       </aside>
+
       <section class="stage">
         <div id="status" class="status">Pick a seeded score.</div>
         <div id="meta" class="meta" hidden></div>
@@ -58,33 +59,74 @@
           <span id="audioStatus" class="audio-status"></span>
           <audio id="audioEl" controls preload="metadata"></audio>
         </div>
+        <div class="edit-toolbar" id="editToolbar" hidden>
+          <button type="button" data-edit="transpose-up" title="Transpose +1">♯ +1</button>
+          <button type="button" data-edit="transpose-down" title="Transpose −1">♭ −1</button>
+          <button type="button" data-edit="delete-selection">Delete</button>
+          <button type="button" data-edit="duplicate">Duplicate</button>
+          <label class="duration-label">
+            Duration
+            <select id="durationSelect" aria-label="Note duration">
+              <option value="whole">Whole</option>
+              <option value="half">Half</option>
+              <option value="quarter" selected>Quarter</option>
+              <option value="eighth">Eighth</option>
+              <option value="sixteenth">16th</option>
+            </select>
+          </label>
+          <button type="button" data-edit="set-duration">Set duration</button>
+          <button type="button" data-edit="insert-measure">Insert bar</button>
+          <button type="button" data-edit="delete-measures">Delete bars</button>
+          <button type="button" data-edit="copy">Copy</button>
+          <button type="button" data-edit="cut">Cut</button>
+          <button type="button" data-edit="paste">Paste</button>
+          <button type="button" data-edit="undo">Undo</button>
+          <button type="button" data-edit="redo">Redo</button>
+          <button type="button" data-edit="play-selection">Play sel</button>
+          <button type="button" data-edit="reset-session" class="danger-btn">Reset score</button>
+        </div>
         <div id="pages" class="pages"></div>
       </section>
-    </main>
 
-    <footer class="command-dock" id="commandDock">
-      <div class="command-dock-inner">
-        <div class="command-meta">
-          <span id="commandSelection" class="command-selection">No selection</span>
-          <button type="button" id="transcriptToggle" class="transcript-toggle" hidden>
-            Transcript
+      <aside class="agent-rail" id="agentRail" aria-label="Natural language agent">
+        <div class="agent-rail-header">
+          <button
+            type="button"
+            id="agentBackBtn"
+            class="agent-back-btn"
+            hidden
+            aria-label="Back to score"
+          >
+            ← Score
+          </button>
+          <h2>Agent</h2>
+          <button
+            type="button"
+            id="agentExpandBtn"
+            class="agent-expand-btn"
+            hidden
+            aria-label="Expand chat to full screen"
+          >
+            Expand
           </button>
         </div>
+        <p id="commandSelection" class="command-selection">No selection</p>
+        <div id="commandTranscript" class="command-transcript" aria-live="polite"></div>
+        <div id="commandReply" class="command-reply" hidden></div>
         <form id="commandForm" class="command-form" autocomplete="off">
-          <input
+          <textarea
             id="commandInput"
             class="command-input"
-            type="text"
             name="command"
-            placeholder="Clone measures 2–7 and make quarter notes half notes"
+            rows="3"
+            placeholder="Select m4–6 and transpose up a half step"
             aria-label="Natural language score command"
-          />
+          ></textarea>
           <button type="submit" id="commandSend" class="command-send">Send</button>
         </form>
-        <div id="commandReply" class="command-reply" hidden></div>
-        <div id="commandTranscript" class="command-transcript" hidden></div>
-      </div>
-    </footer>
+        <p id="renderStatus" class="render-status"></p>
+      </aside>
+    </main>
 
     <script type="module" src="/app.js"></script>
   </body>
