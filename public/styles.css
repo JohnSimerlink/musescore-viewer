@@ -1,4 +1,5 @@
-:root {
+:root,
+html[data-theme="light"] {
   --paper: #f2f4f7;
   --paper-deep: #e6eaef;
   --ink: #1a2433;
@@ -13,8 +14,38 @@
   --focus: #3d6b8c;
   --ok: #3f6f55;
   --danger: #a63d3d;
+  --selection: color-mix(in srgb, var(--brass) 34%, transparent);
+  --selection-edge: color-mix(in srgb, var(--brass) 72%, var(--brass-ink));
+  --score-page: #fff;
+  --dock-bg: color-mix(in srgb, var(--paper) 92%, transparent);
   --radius: 6px;
   --shadow: 0 1px 0 rgba(26, 36, 51, 0.06);
+  --glow-sky: color-mix(in srgb, var(--sky) 42%, transparent);
+  --glow-prairie: color-mix(in srgb, var(--prairie) 18%, transparent);
+}
+
+html[data-theme="dark"] {
+  --paper: #121820;
+  --paper-deep: #1a222d;
+  --ink: #e8edf4;
+  --ink-soft: #9aa8b8;
+  --rule: #2e3a4a;
+  --sky: #6d86a3;
+  --sky-deep: #8fa8c4;
+  --prairie: #7f936c;
+  --brass: #d0b06a;
+  --brass-ink: #1c1810;
+  --playhead: #e06a2f;
+  --focus: #7eb0d0;
+  --ok: #6a9a7a;
+  --danger: #d16a6a;
+  --selection: color-mix(in srgb, var(--brass) 28%, transparent);
+  --selection-edge: color-mix(in srgb, var(--brass) 80%, #fff);
+  --score-page: #fff;
+  --dock-bg: color-mix(in srgb, var(--paper) 94%, #000);
+  --shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
+  --glow-sky: color-mix(in srgb, var(--sky) 22%, transparent);
+  --glow-prairie: color-mix(in srgb, var(--prairie) 12%, transparent);
 }
 
 * {
@@ -26,11 +57,15 @@ body {
   margin: 0;
   min-height: 100%;
   background:
-    radial-gradient(1100px 520px at 8% -8%, color-mix(in srgb, var(--sky) 42%, transparent) 0%, transparent 58%),
-    radial-gradient(900px 480px at 100% 100%, color-mix(in srgb, var(--prairie) 18%, transparent) 0%, transparent 52%),
+    radial-gradient(1100px 520px at 8% -8%, var(--glow-sky) 0%, transparent 58%),
+    radial-gradient(900px 480px at 100% 100%, var(--glow-prairie) 0%, transparent 52%),
     var(--paper);
   color: var(--ink);
   font: 15px/1.45 "IBM Plex Sans", "Segoe UI", sans-serif;
+}
+
+body {
+  padding-bottom: 7.5rem;
 }
 
 .top {
@@ -65,6 +100,16 @@ body {
   font-style: italic;
 }
 
+.header-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.theme-toggle {
+  min-width: 4.5rem;
+}
+
 .controls {
   display: flex;
   flex-wrap: wrap;
@@ -88,7 +133,8 @@ select {
 
 .file-btn,
 .btn-primary,
-#playBtn {
+#playBtn,
+.command-send {
   background: var(--brass);
   color: var(--brass-ink);
   border-color: color-mix(in srgb, var(--brass) 70%, var(--brass-ink));
@@ -105,12 +151,26 @@ select:hover,
   filter: brightness(0.97);
 }
 
+html[data-theme="dark"] button:hover,
+html[data-theme="dark"] select:hover,
+html[data-theme="dark"] .file-btn:hover {
+  filter: brightness(1.08);
+}
+
 button:focus-visible,
 select:focus-visible,
 .file-btn:focus-visible,
-.score-item:focus-visible {
+.score-item:focus-visible,
+.command-input:focus-visible,
+.theme-toggle:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
+}
+
+button[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--sky) 28%, var(--paper-deep));
+  border-color: color-mix(in srgb, var(--sky-deep) 50%, var(--rule));
+  color: var(--ink);
 }
 
 .layout {
@@ -135,69 +195,12 @@ select:focus-visible,
   color: var(--ink-soft);
 }
 
-.filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-  margin-bottom: 0.5rem;
-}
-
-.filter {
-  padding: 0.35rem 0.55rem;
-  font-size: 0.78rem;
-  border-radius: var(--radius);
-}
-
-.filter.active {
-  background: var(--sky-deep);
-  color: #fff;
-  border-color: transparent;
-}
-
-.filter-count {
-  color: var(--ink-soft);
-  font-size: 0.78rem;
-  margin-bottom: 0.65rem;
-}
-
 .score-list {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
   max-height: calc(100vh - 220px);
   overflow: auto;
-}
-
-.badge {
-  display: inline-block;
-  margin-right: 0.35rem;
-  padding: 0.05rem 0.4rem;
-  border-radius: var(--radius);
-  font-size: 0.7rem;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  background: color-mix(in srgb, var(--sky) 28%, var(--paper-deep));
-  color: var(--sky-deep);
-}
-
-.badge.ms-2 {
-  background: color-mix(in srgb, var(--prairie) 22%, var(--paper-deep));
-  color: var(--prairie);
-}
-
-.badge.ms-3 {
-  background: color-mix(in srgb, var(--ok) 20%, var(--paper-deep));
-  color: var(--ok);
-}
-
-.badge.ms-4 {
-  background: color-mix(in srgb, var(--sky-deep) 18%, var(--paper-deep));
-  color: var(--sky-deep);
-}
-
-.badge.ms-u {
-  background: color-mix(in srgb, var(--brass) 28%, var(--paper-deep));
-  color: var(--brass-ink);
 }
 
 .player {
@@ -217,9 +220,23 @@ select:focus-visible,
   width: min(100%, 420px);
 }
 
-.audio-status {
+.audio-status,
+.selection-label {
   color: var(--ink-soft);
   font-size: 0.85rem;
+}
+
+.selection-label {
+  color: var(--brass-ink);
+  background: color-mix(in srgb, var(--brass) 35%, var(--paper));
+  border: 1px solid color-mix(in srgb, var(--brass) 55%, var(--rule));
+  border-radius: var(--radius);
+  padding: 0.25rem 0.55rem;
+}
+
+html[data-theme="dark"] .selection-label {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--brass) 22%, var(--paper-deep));
 }
 
 .score-item {
@@ -294,7 +311,7 @@ select:focus-visible,
 
 .page {
   width: min(100%, 980px);
-  background: #fff;
+  background: var(--score-page);
   color: #111;
   border: 1px solid var(--rule);
   border-radius: var(--radius);
@@ -305,6 +322,10 @@ select:focus-visible,
 .page-stage {
   position: relative;
   cursor: crosshair;
+}
+
+.page-stage.select-mode {
+  cursor: cell;
 }
 
 .page svg {
@@ -327,9 +348,141 @@ select:focus-visible,
   will-change: transform;
 }
 
+.measure-overlay {
+  position: absolute;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.measure-hilite {
+  position: absolute;
+  background: var(--selection);
+  border: 1px solid var(--selection-edge);
+  border-radius: 2px;
+  box-sizing: border-box;
+}
+
 .cursor-hint {
   color: var(--ink-soft);
   font-size: 0.9em;
+}
+
+/* Bottom command dock */
+.command-dock {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  border-top: 1px solid var(--rule);
+  background: var(--dock-bg);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 -8px 24px rgba(26, 36, 51, 0.06);
+}
+
+html[data-theme="dark"] .command-dock {
+  box-shadow: 0 -10px 28px rgba(0, 0, 0, 0.35);
+}
+
+.command-dock-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0.65rem 1.25rem 0.85rem;
+}
+
+.command-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.4rem;
+}
+
+.command-selection {
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  font-family: Literata, Georgia, serif;
+  font-style: italic;
+}
+
+.transcript-toggle {
+  padding: 0.3rem 0.55rem;
+  font-size: 0.78rem;
+}
+
+.command-form {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.55rem;
+  align-items: stretch;
+}
+
+.command-input {
+  width: 100%;
+  border: 1px solid var(--rule);
+  background: var(--paper-deep);
+  color: var(--ink);
+  border-radius: var(--radius);
+  padding: 0.7rem 0.9rem;
+  font-family: Literata, Georgia, serif;
+  font-size: 1rem;
+  box-shadow: var(--shadow);
+}
+
+.command-input::placeholder {
+  color: color-mix(in srgb, var(--ink-soft) 75%, transparent);
+  font-style: italic;
+}
+
+.command-send {
+  min-width: 5.5rem;
+  border-radius: var(--radius);
+}
+
+.command-send:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.command-reply {
+  margin-top: 0.5rem;
+  padding: 0.55rem 0.7rem;
+  border-left: 3px solid var(--brass);
+  color: var(--ink);
+  font-size: 0.92rem;
+  background: color-mix(in srgb, var(--paper-deep) 70%, transparent);
+}
+
+.command-reply.error {
+  border-left-color: var(--danger);
+  color: var(--danger);
+}
+
+.command-transcript {
+  margin-top: 0.45rem;
+  max-height: 140px;
+  overflow: auto;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--paper-deep);
+  padding: 0.5rem 0.65rem;
+  font-size: 0.82rem;
+}
+
+.command-transcript .turn {
+  margin-bottom: 0.45rem;
+}
+
+.command-transcript .role {
+  font-weight: 600;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.7rem;
 }
 
 @media (max-width: 860px) {
@@ -344,5 +497,9 @@ select:focus-visible,
 
   .score-list {
     max-height: 220px;
+  }
+
+  body {
+    padding-bottom: 9rem;
   }
 }

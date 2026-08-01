@@ -2,3 +2,17 @@ node_modules/
 .DS_Store
 *.log
 .railway/
+
+# Secrets / local env (never commit)
+.env
+.env.*
+!.env.example
+!**/.env.example
+
+# Python
+agent/.venv/
+**/__pycache__/
+*.py[cod]
+.Python
+*.egg-info/
+.pytest_cache/

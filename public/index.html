@@ -4,6 +4,22 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Copland</title>
+    <script>
+      (function () {
+        try {
+          var saved = localStorage.getItem("copland-theme");
+          var theme =
+            saved === "light" || saved === "dark"
+              ? saved
+              : window.matchMedia("(prefers-color-scheme: dark)").matches
+                ? "dark"
+                : "light";
+          document.documentElement.setAttribute("data-theme", theme);
+        } catch (_) {
+          document.documentElement.setAttribute("data-theme", "light");
+        }
+      })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -18,6 +34,11 @@
         <h1>COPLAND</h1>
         <p>for the common composer</p>
       </div>
+      <div class="header-actions">
+        <button type="button" id="themeToggle" class="theme-toggle" aria-label="Switch to dark theme">
+          Dark
+        </button>
+      </div>
     </header>
 
     <main class="layout">
@@ -31,12 +52,39 @@
         <div class="player" id="playerBar" hidden>
           <button type="button" id="playBtn" class="btn-primary">Play</button>
           <button type="button" id="stopBtn" hidden>Stop</button>
+          <button type="button" id="selectModeBtn" aria-pressed="false">Select</button>
+          <button type="button" id="clearSelBtn" hidden>Clear selection</button>
+          <span id="selectionLabel" class="selection-label" hidden></span>
           <span id="audioStatus" class="audio-status"></span>
           <audio id="audioEl" controls preload="metadata"></audio>
         </div>
         <div id="pages" class="pages"></div>
       </section>
     </main>
+
+    <footer class="command-dock" id="commandDock">
+      <div class="command-dock-inner">
+        <div class="command-meta">
+          <span id="commandSelection" class="command-selection">No selection</span>
+          <button type="button" id="transcriptToggle" class="transcript-toggle" hidden>
+            Transcript
+          </button>
+        </div>
+        <form id="commandForm" class="command-form" autocomplete="off">
+          <input
+            id="commandInput"
+            class="command-input"
+            type="text"
+            name="command"
+            placeholder="Clone measures 2–7 and make quarter notes half notes"
+            aria-label="Natural language score command"
+          />
+          <button type="submit" id="commandSend" class="command-send">Send</button>
+        </form>
+        <div id="commandReply" class="command-reply" hidden></div>
+        <div id="commandTranscript" class="command-transcript" hidden></div>
+      </div>
+    </footer>
 
     <script type="module" src="/app.js"></script>
   </body>
