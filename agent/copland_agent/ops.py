@@ -1,10 +1,11 @@
-"""In-memory ops planner for score edit tools (no SVG re-render yet)."""
+"""Plan + apply score edit tools against the active session."""
 
 from __future__ import annotations
 
 from typing import Any
 
 from .models import PlannedOp, SelectionContext
+from .sessions import STORE, ScoreSession
 
 
 def _sel_dict(selection: SelectionContext | None) -> dict[str, Any]:
@@ -13,110 +14,80 @@ def _sel_dict(selection: SelectionContext | None) -> dict[str, Any]:
     return selection.model_dump(exclude_none=True)
 
 
+def resolve_session(score_slug: str | None) -> ScoreSession | None:
+    if not score_slug:
+        return None
+    return STORE.get_or_open(score_slug)
+
+
+def apply_tool(
+    session: ScoreSession | None,
+    tool: str,
+    args: dict[str, Any],
+) -> PlannedOp:
+    if session is None:
+        return PlannedOp(
+            tool=tool,
+            args=args,
+            status="error",
+            detail="No score loaded (missing score_slug).",
+        )
+    # Defer MuseScore re-render to end of chat / explicit API (faster multi-tool turns).
+    result = session.apply(tool, args, render=False)
+    return result.op
+
+
 def plan_transpose(
     semitones: int,
     selection: SelectionContext | None = None,
+    *,
+    session: ScoreSession | None = None,
 ) -> PlannedOp:
-    if selection is None or selection.measure_start is None:
-        return PlannedOp(
-            tool="transpose_selection",
-            args={"semitones": semitones},
-            status="error",
-            detail="No measure selection provided.",
-        )
-    return PlannedOp(
-        tool="transpose_selection",
-        args={"semitones": semitones, "selection": _sel_dict(selection)},
-        status="planned",
-        detail=(
-            f"Would transpose measures {selection.measure_start}–{selection.measure_end} "
-            f"by {semitones:+d} semitone(s)."
-        ),
-    )
+    args: dict[str, Any] = {"semitones": semitones}
+    if selection is not None:
+        args["selection"] = selection
+    return apply_tool(session, "transpose_selection", args)
 
 
-def plan_delete(selection: SelectionContext | None = None) -> PlannedOp:
-    if selection is None or selection.measure_start is None:
-        return PlannedOp(
-            tool="delete_selection",
-            args={},
-            status="error",
-            detail="No measure selection provided.",
-        )
-    return PlannedOp(
-        tool="delete_selection",
-        args={"selection": _sel_dict(selection)},
-        status="planned",
-        detail=(
-            f"Would delete content in measures {selection.measure_start}–{selection.measure_end}."
-        ),
-    )
+def plan_delete(
+    selection: SelectionContext | None = None,
+    *,
+    session: ScoreSession | None = None,
+) -> PlannedOp:
+    args: dict[str, Any] = {}
+    if selection is not None:
+        args["selection"] = selection
+    return apply_tool(session, "delete_selection", args)
 
 
 def plan_duplicate(
     measure_start: int,
     measure_end: int,
     insert_after: int | None = None,
+    *,
+    session: ScoreSession | None = None,
 ) -> PlannedOp:
-    if measure_start < 1 or measure_end < measure_start:
-        return PlannedOp(
-            tool="duplicate_measures",
-            args={
-                "measure_start": measure_start,
-                "measure_end": measure_end,
-                "insert_after": insert_after,
-            },
-            status="error",
-            detail="Invalid measure range.",
-        )
-    target = insert_after if insert_after is not None else measure_end
-    return PlannedOp(
-        tool="duplicate_measures",
-        args={
+    return apply_tool(
+        session,
+        "duplicate_measures",
+        {
             "measure_start": measure_start,
             "measure_end": measure_end,
-            "insert_after": target,
+            "insert_after": insert_after,
         },
-        status="planned",
-        detail=f"Would clone measures {measure_start}–{measure_end} after measure {target}.",
     )
 
 
 def plan_set_duration(
     duration: str,
     selection: SelectionContext | None = None,
+    *,
+    session: ScoreSession | None = None,
 ) -> PlannedOp:
-    allowed = {
-        "whole",
-        "half",
-        "quarter",
-        "eighth",
-        "sixteenth",
-        "32nd",
-        "dotted-half",
-        "dotted-quarter",
-        "dotted-eighth",
-    }
-    if duration not in allowed:
-        return PlannedOp(
-            tool="set_note_duration",
-            args={"duration": duration},
-            status="error",
-            detail=f"Unsupported duration '{duration}'.",
-        )
-    return PlannedOp(
-        tool="set_note_duration",
-        args={"duration": duration, "selection": _sel_dict(selection)},
-        status="planned",
-        detail=(
-            f"Would set note durations to {duration}"
-            + (
-                f" in measures {selection.measure_start}–{selection.measure_end}."
-                if selection and selection.measure_start is not None
-                else " for the current selection / caret."
-            )
-        ),
-    )
+    args: dict[str, Any] = {"duration": duration}
+    if selection is not None:
+        args["selection"] = selection
+    return apply_tool(session, "set_note_duration", args)
 
 
 def plan_set_selection(
@@ -124,27 +95,24 @@ def plan_set_selection(
     measure_end: int,
     voices: list[str] | None = None,
     staves: list[str] | None = None,
+    *,
+    session: ScoreSession | None = None,
 ) -> PlannedOp:
-    if measure_start < 1 or measure_end < measure_start:
-        return PlannedOp(
-            tool="set_selection",
-            args={"measure_start": measure_start, "measure_end": measure_end},
-            status="error",
-            detail="Invalid measure range.",
-        )
-    return PlannedOp(
-        tool="set_selection",
-        args={
+    return apply_tool(
+        session,
+        "set_selection",
+        {
             "measure_start": measure_start,
             "measure_end": measure_end,
             "voices": voices or [],
             "staves": staves or [],
         },
-        status="stub",
-        detail=(
-            f"Selection context noted: measures {measure_start}–{measure_end}"
-            + (f", voices={voices}" if voices else "")
-            + (f", staves={staves}" if staves else "")
-            + "."
-        ),
     )
+
+
+def apply_named(
+    session: ScoreSession | None,
+    tool: str,
+    **kwargs: Any,
+) -> PlannedOp:
+    return apply_tool(session, tool, kwargs)

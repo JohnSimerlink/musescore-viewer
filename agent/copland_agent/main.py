@@ -4,8 +4,9 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 
 from .agent import (
     api_key_present,
@@ -16,7 +17,15 @@ from .agent import (
     llm_provider,
     model_name,
 )
-from .models import ChatRequest, ChatResponse, ToolCallRecord
+from .models import (
+    ApplyRequest,
+    ApplyResponse,
+    ChatRequest,
+    ChatResponse,
+    ToolCallRecord,
+)
+from .render.musescore_cli import find_mscore
+from .sessions import STORE
 from .tools import AgentDeps
 
 # Load repo-root .env first, then agent/.env (local overrides)
@@ -27,7 +36,7 @@ load_dotenv(_ROOT / ".env.local")
 load_dotenv(_AGENT_DIR / ".env")
 load_dotenv(_AGENT_DIR / ".env.local")
 
-app = FastAPI(title="Copland Agent", version="0.1.0")
+app = FastAPI(title="Copland Agent", version="0.2.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -53,11 +62,99 @@ async def health():
         "provider": llm_provider(),
         "model": model_name(),
         "api_key_configured": api_key_present(),
+        "mscore_available": find_mscore() is not None,
+        "seed_dir": str(STORE.seed_dir),
+        "open_sessions": list(STORE.sessions.keys()),
     }
+
+
+@app.post("/api/session/open")
+async def session_open(payload: dict):
+    slug = payload.get("score_slug") or payload.get("slug")
+    if not slug:
+        raise HTTPException(400, "score_slug required")
+    try:
+        sess = STORE.get_or_open(slug, title=payload.get("score_title"))
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    if payload.get("render"):
+        sess.render(include_audio=bool(payload.get("include_audio")))
+    return sess.public_assets()
+
+
+@app.post("/api/session/reset")
+async def session_reset(payload: dict):
+    slug = payload.get("score_slug") or payload.get("slug")
+    if not slug:
+        raise HTTPException(400, "score_slug required")
+    sess = STORE.reset(slug)
+    return sess.public_assets()
+
+
+@app.get("/api/session/{slug}")
+async def session_get(slug: str):
+    sess = STORE.get(slug)
+    if sess is None:
+        try:
+            sess = STORE.get_or_open(slug)
+        except FileNotFoundError as exc:
+            raise HTTPException(404, str(exc)) from exc
+    return sess.public_assets()
+
+
+@app.post("/api/session/apply", response_model=ApplyResponse)
+async def session_apply(req: ApplyRequest) -> ApplyResponse:
+    try:
+        sess = STORE.get_or_open(req.score_slug, title=req.score_title)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    if req.selection is not None:
+        sess.engine.selection = req.selection
+    args = dict(req.args)
+    if req.selection is not None and "selection" not in args:
+        args["selection"] = req.selection
+    result = sess.apply(req.tool, args, render=True)
+    return ApplyResponse(
+        op=result.op,
+        score_assets=sess.public_assets(),
+        error=None if result.op.status != "error" else result.op.detail,
+    )
+
+
+@app.post("/api/session/{slug}/render")
+async def session_render(slug: str, payload: dict | None = None):
+    sess = STORE.get(slug)
+    if sess is None:
+        raise HTTPException(404, "Session not open")
+    include_audio = bool((payload or {}).get("include_audio"))
+    result = sess.render(include_audio=include_audio)
+    return {"render": result.__dict__, "score_assets": sess.public_assets()}
+
+
+@app.get("/api/session/{slug}/assets/{name}")
+async def session_asset(slug: str, name: str):
+    sess = STORE.get(slug)
+    if sess is None or sess.render_dir is None:
+        raise HTTPException(404, "No rendered assets")
+    # prevent path traversal
+    safe = Path(name).name
+    path = sess.render_dir / safe
+    if not path.exists():
+        raise HTTPException(404, "Asset not found")
+    return FileResponse(path)
 
 
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest) -> ChatResponse:
+    session = None
+    if req.score_slug:
+        try:
+            session = STORE.get_or_open(req.score_slug, title=req.score_title)
+            if req.selection is not None:
+                session.engine.selection = req.selection
+        except FileNotFoundError:
+            session = None
+
     if not api_key_present():
         provider = llm_provider()
         key_hint = "XAI_API_KEY" if provider == "xai" else "OPENAI_API_KEY"
@@ -65,17 +162,19 @@ async def chat(req: ChatRequest) -> ChatResponse:
             reply=(
                 f"No model API key configured. Set {key_hint} in the repo-root .env "
                 "(see .env.example), then restart the agent. Selection and the command "
-                "bar still work offline."
+                "bar still work offline; use click tools /api/session/apply for edits."
             ),
             selection=req.selection,
             error="missing_api_key",
             model=None,
+            score_assets=session.public_assets() if session else None,
         )
 
     deps = AgentDeps(
         selection=req.selection,
         score_slug=req.score_slug,
         score_title=req.score_title,
+        session=session,
     )
     prompt = build_user_prompt(
         req.message,
@@ -93,6 +192,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
             selection=req.selection,
             error="agent_error",
             model=model_name(),
+            score_assets=session.public_assets() if session else None,
         )
 
     tool_records = [
@@ -105,6 +205,14 @@ async def chat(req: ChatRequest) -> ChatResponse:
             for op in deps.planned_ops
         ]
 
+    active = deps.session or session
+    assets = None
+    if active is not None:
+        # Re-render once after the full tool turn when MuseScore is available.
+        if any(op.status == "applied" for op in deps.planned_ops):
+            active.render(include_audio=False)
+        assets = active.public_assets()
+
     return ChatResponse(
         reply=str(result.output),
         tool_calls=tool_records,
@@ -112,6 +220,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
         selection=deps.selection or req.selection,
         model=model_name(),
         error=None,
+        score_assets=assets,
     )
 
 

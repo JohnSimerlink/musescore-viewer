@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Copland</title>
     <script>
       (function () {
@@ -32,59 +32,111 @@
     <header class="top">
       <div class="brand">
         <h1>COPLAND</h1>
-        <p>for the common composer</p>
+        <p class="tagline">for the common composer</p>
       </div>
       <div class="header-actions">
+        <button type="button" id="libraryOpenBtn" class="library-open-btn" hidden aria-label="Open score library">
+          Scores
+        </button>
         <button type="button" id="themeToggle" class="theme-toggle" aria-label="Switch to dark theme">
           Dark
         </button>
       </div>
     </header>
 
-    <main class="layout">
-      <aside class="sidebar">
-        <h2>Scores</h2>
-        <div id="scoreList" class="score-list">Loading…</div>
-      </aside>
-      <section class="stage">
-        <div id="status" class="status">Pick a seeded score.</div>
-        <div id="meta" class="meta" hidden></div>
-        <div class="player" id="playerBar" hidden>
-          <button type="button" id="playBtn" class="btn-primary">Play</button>
-          <button type="button" id="stopBtn" hidden>Stop</button>
-          <button type="button" id="selectModeBtn" aria-pressed="false">Select</button>
-          <button type="button" id="clearSelBtn" hidden>Clear selection</button>
-          <span id="selectionLabel" class="selection-label" hidden></span>
-          <span id="audioStatus" class="audio-status"></span>
-          <audio id="audioEl" controls preload="metadata"></audio>
-        </div>
-        <div id="pages" class="pages"></div>
-      </section>
-    </main>
-
-    <footer class="command-dock" id="commandDock">
-      <div class="command-dock-inner">
-        <div class="command-meta">
-          <span id="commandSelection" class="command-selection">No selection</span>
-          <button type="button" id="transcriptToggle" class="transcript-toggle" hidden>
-            Transcript
+    <main class="layout" id="appLayout">
+      <aside class="sidebar" id="libraryPanel" aria-label="Score library">
+        <div class="library-header">
+          <h2>Scores</h2>
+          <button type="button" id="libraryCloseBtn" class="library-close-btn" hidden aria-label="Close library">
+            Close
           </button>
         </div>
+        <div id="scoreList" class="score-list">Loading…</div>
+      </aside>
+
+      <section class="stage" id="stage">
+        <div id="emptyState" class="empty-state">
+          <p class="empty-title">Open a score to begin</p>
+          <p class="empty-copy">Pick from your library, then select measures and edit with tools or natural language.</p>
+          <button type="button" id="emptyLibraryBtn" class="btn-primary">Browse scores</button>
+        </div>
+
+        <div id="scoreWorkspace" class="score-workspace" hidden>
+          <div class="transport" id="playerBar">
+            <button type="button" id="playBtn" class="btn-primary transport-btn">Play</button>
+            <button type="button" id="stopBtn" class="transport-btn" hidden>Stop</button>
+            <button type="button" id="selectModeBtn" class="transport-btn" aria-pressed="false">Select</button>
+            <button type="button" id="clearSelBtn" class="transport-btn" hidden>Clear</button>
+            <span id="selectionLabel" class="selection-label" hidden></span>
+            <span id="audioStatus" class="audio-status" aria-live="polite"></span>
+            <audio id="audioEl" preload="metadata"></audio>
+          </div>
+
+          <details class="edit-tools-details" id="editToolsDetails">
+            <summary>Edit tools</summary>
+            <div class="edit-toolbar" id="editToolbar">
+              <button type="button" data-edit="transpose-up" title="Transpose +1">♯ +1</button>
+              <button type="button" data-edit="transpose-down" title="Transpose −1">♭ −1</button>
+              <button type="button" data-edit="delete-selection">Delete</button>
+              <button type="button" data-edit="duplicate">Duplicate</button>
+              <label class="duration-label">
+                Duration
+                <select id="durationSelect" aria-label="Note duration">
+                  <option value="whole">Whole</option>
+                  <option value="half">Half</option>
+                  <option value="quarter" selected>Quarter</option>
+                  <option value="eighth">Eighth</option>
+                  <option value="sixteenth">16th</option>
+                </select>
+              </label>
+              <button type="button" data-edit="set-duration">Set duration</button>
+              <button type="button" data-edit="insert-measure">Insert bar</button>
+              <button type="button" data-edit="delete-measures">Delete bars</button>
+              <button type="button" data-edit="copy">Copy</button>
+              <button type="button" data-edit="cut">Cut</button>
+              <button type="button" data-edit="paste">Paste</button>
+              <button type="button" data-edit="undo">Undo</button>
+              <button type="button" data-edit="redo">Redo</button>
+              <button type="button" data-edit="play-selection">Play sel</button>
+              <button type="button" data-edit="reset-session" class="danger-btn">Reset</button>
+            </div>
+          </details>
+
+          <p id="status" class="status status-inline" hidden></p>
+          <div id="pages" class="pages"></div>
+        </div>
+      </section>
+
+      <aside class="agent-rail" id="agentRail" aria-label="Natural language agent">
+        <div class="agent-rail-header">
+          <button type="button" id="agentBackBtn" class="agent-back-btn" hidden aria-label="Back to score">
+            ← Score
+          </button>
+          <h2>Agent</h2>
+          <button type="button" id="agentExpandBtn" class="agent-expand-btn" hidden aria-label="Expand chat">
+            Expand
+          </button>
+        </div>
+        <p id="commandSelection" class="command-selection">No selection</p>
+        <div id="commandTranscript" class="command-transcript" aria-live="polite"></div>
+        <div id="commandReply" class="command-reply" hidden></div>
         <form id="commandForm" class="command-form" autocomplete="off">
-          <input
+          <textarea
             id="commandInput"
             class="command-input"
-            type="text"
             name="command"
+            rows="2"
             placeholder="Clone measures 2–7 and make quarter notes half notes"
             aria-label="Natural language score command"
-          />
+          ></textarea>
           <button type="submit" id="commandSend" class="command-send">Send</button>
         </form>
-        <div id="commandReply" class="command-reply" hidden></div>
-        <div id="commandTranscript" class="command-transcript" hidden></div>
-      </div>
-    </footer>
+        <p id="renderStatus" class="render-status"></p>
+      </aside>
+    </main>
+
+    <div id="libraryBackdrop" class="library-backdrop" hidden></div>
 
     <script type="module" src="/app.js"></script>
   </body>
