@@ -71,9 +71,10 @@ app.get("/api/health", async (_req, res) => {
   } catch (err) {
     agent = { ok: false, reachable: false, error: String(err.message || err) };
   }
+  const agentUp = Boolean(agent.reachable && agent.ok);
   res.json({
     ok: true,
-    mode: "frontend-seed",
+    mode: agentUp ? "ui+agent" : "frontend-seed",
     seedDir: existsSync(SEED_DIR),
     agentUrl: AGENT_URL,
     agent,
