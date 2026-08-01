@@ -1,0 +1,19 @@
+{
+  "name": "musescore-viewer",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Localhost MuseScore (.mscz) sheet viewer via webmscore + MuseScore CLI fallback",
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node --watch server.mjs"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "multer": "^2.0.2",
+    "webmscore": "^1.2.1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
