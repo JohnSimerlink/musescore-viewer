@@ -1,0 +1,19 @@
+{
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "install": "npm ci && python3 -m venv agent/.venv && agent/.venv/bin/pip install -r agent/requirements.txt",
+  "terminals": [
+    {
+      "name": "ui",
+      "command": "npm start",
+      "description": "Node UI + API proxy on port 5177"
+    },
+    {
+      "name": "agent",
+      "command": "npm run agent",
+      "description": "Python NL agent sidecar on port 5178"
+    }
+  ]
+}

@@ -103,6 +103,84 @@
             </div>
           </details>
 
+          <details class="inspector-details" id="inspectorDetails">
+            <summary>Pitch &amp; inspector</summary>
+            <div class="inspector-panel" id="inspectorPanel">
+              <div class="pitch-keypad" id="pitchKeypad" role="group" aria-label="Pitch keypad">
+                <button type="button" data-pitch="60">C4</button>
+                <button type="button" data-pitch="62">D4</button>
+                <button type="button" data-pitch="64">E4</button>
+                <button type="button" data-pitch="65">F4</button>
+                <button type="button" data-pitch="67">G4</button>
+                <button type="button" data-pitch="69">A4</button>
+                <button type="button" data-pitch="71">B4</button>
+                <button type="button" data-pitch="72">C5</button>
+              </div>
+              <div class="inspector-fields">
+                <label>
+                  Tempo
+                  <span class="inline-fields">
+                    <input type="number" id="tempoInput" min="20" max="300" value="120" aria-label="Tempo BPM" />
+                    <button type="button" id="tempoApplyBtn">Set</button>
+                  </span>
+                </label>
+                <label>
+                  Dynamic
+                  <span class="inline-fields">
+                    <select id="dynamicSelect" aria-label="Dynamic marking">
+                      <option value="pp">pp</option>
+                      <option value="p">p</option>
+                      <option value="mp" selected>mp</option>
+                      <option value="mf">mf</option>
+                      <option value="f">f</option>
+                      <option value="ff">ff</option>
+                    </select>
+                    <button type="button" id="dynamicApplyBtn">Add</button>
+                  </span>
+                </label>
+                <label>
+                  Lyrics
+                  <span class="inline-fields">
+                    <input type="text" id="lyricsInput" placeholder="syllable" aria-label="Lyric text" />
+                    <button type="button" id="lyricsApplyBtn">Set</button>
+                  </span>
+                </label>
+                <label>
+                  Time sig
+                  <span class="inline-fields">
+                    <input type="number" id="timeNumInput" min="1" max="32" value="4" aria-label="Time numerator" />
+                    <span aria-hidden="true">/</span>
+                    <input type="number" id="timeDenInput" min="1" max="32" value="4" aria-label="Time denominator" />
+                    <button type="button" id="timeApplyBtn">Set</button>
+                  </span>
+                </label>
+                <label>
+                  Key (fifths)
+                  <span class="inline-fields">
+                    <input type="number" id="keyFifthsInput" min="-7" max="7" value="0" aria-label="Key signature fifths" />
+                    <button type="button" id="keyApplyBtn">Set</button>
+                  </span>
+                </label>
+              </div>
+            </div>
+          </details>
+
+          <details class="versions-details" id="versionsDetails">
+            <summary>Versions</summary>
+            <div class="versions-panel" id="versionsPanel">
+              <form id="versionLabelForm" class="version-label-form" autocomplete="off">
+                <input
+                  type="text"
+                  id="versionLabelInput"
+                  placeholder="Label current (e.g. v1)"
+                  aria-label="Version label"
+                />
+                <button type="submit" id="versionLabelBtn">Save label</button>
+              </form>
+              <ul id="versionList" class="version-list" aria-label="Mutation history"></ul>
+            </div>
+          </details>
+
           <p id="status" class="status status-inline" hidden></p>
           <div id="pages" class="pages"></div>
         </div>

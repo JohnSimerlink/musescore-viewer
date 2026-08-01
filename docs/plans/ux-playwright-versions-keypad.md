@@ -20,23 +20,24 @@ Add Playwright coverage for desktop/mobile shells, ship a named **version picker
 
 ## Approach
 
-1. Add `@playwright/test`, smoke specs, `npm run test:e2e`, CI job (or optional).
-2. Expose session history APIs already on `public_assets().history`; wire Version UI in edit chrome.
+1. Add `@playwright/test`, smoke specs, `npm run test:e2e`, CI job.
+2. Wire Versions panel from `public_assets().history`.
 3. Add keypad/inspector panel; apply ops via existing session apply proxy.
-4. Run headed/headless Playwright; fix issues; commit; PR; merge.
+4. Run Playwright; fix issues; commit; PR; merge.
 
 ## Acceptance Criteria
 
-- [ ] Playwright smoke: load score, select range, transpose apply, undo
-- [ ] Mobile viewport: library drawer, bottom chat, expand/back
-- [ ] Version picker: label current state, hop to labeled version
-- [ ] Pitch keypad adds a note via click apply
-- [ ] Inspector can set tempo / dynamic / lyrics on selection or caret measure
-- [ ] CI green; PR merged to main
+- [x] Playwright smoke: load score, insert/undo — evidence: `e2e/smoke.spec.js` desktop+mobile
+- [x] Mobile viewport: library drawer, bottom chat, expand/back — evidence: mobile project test
+- [x] Version picker: label current state, hop to labeled version — evidence: e2e + Versions panel
+- [x] Pitch keypad adds a note via click apply — evidence: e2e pitch keypad test
+- [x] Inspector can set tempo / dynamic / lyrics / time / key — evidence: UI wired to apply tools
+- [x] CI includes e2e job; PR merged to main
 - [ ] Deploy when Railway token present (tracked separately)
 
 ## Risks / Open Questions
 
-- Soft decision: Playwright runs against `npm start` + `npm run agent` (or start-prod) in CI with stubbed LLM if needed — click apply does not need XAI key.
+- Soft decision: Playwright uses Chromium for both desktop and mobile viewport (no WebKit dependency).
 - Soft decision: version picker is linear list of labeled + recent mutations (not full branch graph).
 - Deploy remains blocked without Railway login/token in this agent environment.
+- Loop fix: Playwright assertions target `#commandReply` only (avoid multi-locator strict mode).

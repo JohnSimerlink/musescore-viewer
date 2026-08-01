@@ -27,6 +27,21 @@ const libraryOpenBtn = document.getElementById("libraryOpenBtn");
 const libraryCloseBtn = document.getElementById("libraryCloseBtn");
 const libraryBackdrop = document.getElementById("libraryBackdrop");
 const emptyLibraryBtn = document.getElementById("emptyLibraryBtn");
+const pitchKeypad = document.getElementById("pitchKeypad");
+const tempoInput = document.getElementById("tempoInput");
+const tempoApplyBtn = document.getElementById("tempoApplyBtn");
+const dynamicSelect = document.getElementById("dynamicSelect");
+const dynamicApplyBtn = document.getElementById("dynamicApplyBtn");
+const lyricsInput = document.getElementById("lyricsInput");
+const lyricsApplyBtn = document.getElementById("lyricsApplyBtn");
+const timeNumInput = document.getElementById("timeNumInput");
+const timeDenInput = document.getElementById("timeDenInput");
+const timeApplyBtn = document.getElementById("timeApplyBtn");
+const keyFifthsInput = document.getElementById("keyFifthsInput");
+const keyApplyBtn = document.getElementById("keyApplyBtn");
+const versionLabelForm = document.getElementById("versionLabelForm");
+const versionLabelInput = document.getElementById("versionLabelInput");
+const versionList = document.getElementById("versionList");
 
 let activeSlug = null;
 let activeTitle = null;
@@ -652,6 +667,43 @@ async function applyScoreAssets(assets) {
   if (assets.selection?.measure_start != null) {
     setSelectionRange(assets.selection.measure_start, assets.selection.measure_end);
   }
+  renderVersionList(assets.history);
+}
+
+function targetMeasure() {
+  return selection?.measureStart || 1;
+}
+
+function renderVersionList(history) {
+  if (!versionList) return;
+  if (!history) {
+    versionList.innerHTML = "<li class=\"version-empty\">No history yet</li>";
+    return;
+  }
+  const labels = history.labels || {};
+  const labelById = {};
+  for (const [name, id] of Object.entries(labels)) {
+    if (!labelById[id]) labelById[id] = [];
+    labelById[id].push(name);
+  }
+  const events = [...(history.events || [])].reverse();
+  if (!events.length) {
+    versionList.innerHTML = "<li class=\"version-empty\">No history yet</li>";
+    return;
+  }
+  versionList.innerHTML = events
+    .map((ev) => {
+      const names = labelById[ev.id] || ev.labels || [];
+      const title = names.length ? names.join(", ") : ev.tool;
+      const current = ev.id === history.head_id;
+      return `<li class="version-item${current ? " is-current" : ""}">
+        <button type="button" class="version-hop" data-hop-id="${escapeHtml(ev.id)}" ${current ? "disabled" : ""}>
+          <span class="version-title">${escapeHtml(title)}</span>
+          <span class="version-meta">${escapeHtml(ev.detail || ev.tool || "")}${current ? " · current" : ""}</span>
+        </button>
+      </li>`;
+    })
+    .join("");
 }
 
 async function openSession(slug, title) {
@@ -668,6 +720,7 @@ async function openSession(slug, title) {
         ? "Edit session ready · MuseScore CLI available for re-render"
         : "Edit session ready · MuseScore CLI unavailable (mutations apply; seed SVG until CLI present)",
     );
+    renderVersionList(data.history);
     return data;
   } catch (err) {
     setRenderStatus(String(err.message || err));
@@ -985,11 +1038,92 @@ editToolbar.addEventListener("click", async (ev) => {
       if (seedMeta) await loadSeedVisuals(activeSlug, seedMeta);
       showReply("Score session reset to seed.");
       setRenderStatus(data.render?.detail || "Reset");
+      renderVersionList(data.history);
       break;
     }
     default:
       break;
   }
+});
+
+/* ---------- Pitch keypad + inspector ---------- */
+
+pitchKeypad?.addEventListener("click", async (ev) => {
+  const btn = ev.target.closest("[data-pitch]");
+  if (!btn) return;
+  if (!activeSlug) {
+    showReply("Load a score first.", true);
+    return;
+  }
+  const pitch = Number(btn.getAttribute("data-pitch"));
+  await applyTool("add_note", {
+    pitch,
+    duration: durationSelect?.value || "quarter",
+    measure: targetMeasure(),
+    beat: 1,
+  });
+});
+
+tempoApplyBtn?.addEventListener("click", async () => {
+  await applyTool("set_tempo", { bpm: Number(tempoInput.value), measure: targetMeasure() });
+});
+
+dynamicApplyBtn?.addEventListener("click", async () => {
+  await applyTool("add_dynamic", {
+    marking: dynamicSelect.value,
+    measure: targetMeasure(),
+    beat: 1,
+  });
+});
+
+lyricsApplyBtn?.addEventListener("click", async () => {
+  const text = (lyricsInput.value || "").trim();
+  if (!text) {
+    showReply("Enter lyric text first.", true);
+    return;
+  }
+  await applyTool("set_lyrics", {
+    text,
+    measure: targetMeasure(),
+    beat: 1,
+    verse: 1,
+  });
+});
+
+timeApplyBtn?.addEventListener("click", async () => {
+  await applyTool("set_time_signature", {
+    numerator: Number(timeNumInput.value),
+    denominator: Number(timeDenInput.value),
+    measure: targetMeasure(),
+  });
+});
+
+keyApplyBtn?.addEventListener("click", async () => {
+  await applyTool("set_key_signature", {
+    fifths: Number(keyFifthsInput.value),
+    measure: targetMeasure(),
+  });
+});
+
+/* ---------- Versions ---------- */
+
+versionLabelForm?.addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const name = (versionLabelInput.value || "").trim();
+  if (!name) {
+    showReply("Enter a version label.", true);
+    return;
+  }
+  await applyTool("label_version", { name });
+  versionLabelInput.value = "";
+});
+
+versionList?.addEventListener("click", async (ev) => {
+  const btn = ev.target.closest("[data-hop-id]");
+  if (!btn || btn.disabled) return;
+  const id = btn.getAttribute("data-hop-id");
+  if (!id) return;
+  await applyTool("hop_to", { id });
 });
 
 /* ---------- Transport ---------- */

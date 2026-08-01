@@ -62,6 +62,10 @@ Never commit `.env`. Only `.env.example` is tracked.
 ```bash
 npm test
 # or: cd agent && .venv/bin/pytest -q
+
+# Playwright (starts UI+agent via start-prod.sh)
+npm run test:e2e:install
+npm run test:e2e
 ```
 
 ## Dark mode

@@ -16,3 +16,9 @@ agent/.venv/
 .Python
 *.egg-info/
 .pytest_cache/
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
