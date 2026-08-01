@@ -11,10 +11,15 @@
     "agent": "cd agent && (test -d .venv || python3 -m venv .venv) && .venv/bin/pip install -q -r requirements.txt && .venv/bin/python -m copland_agent",
     "agent:dev": "cd agent && (test -d .venv || python3 -m venv .venv) && .venv/bin/pip install -q -r requirements.txt && COPLAND_AGENT_RELOAD=1 .venv/bin/python -m copland_agent",
     "seed": "bash scripts/prepare-seed.sh",
-    "test": "cd agent && (test -d .venv || python3 -m venv .venv) && .venv/bin/pip install -q -r requirements.txt && .venv/bin/pytest -q"
+    "test": "cd agent && (test -d .venv || python3 -m venv .venv) && .venv/bin/pip install -q -r requirements.txt && .venv/bin/pytest -q",
+    "test:e2e": "playwright test",
+    "test:e2e:install": "playwright install chromium"
   },
   "dependencies": {
     "express": "^5.1.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1"
   },
   "engines": {
     "node": ">=18"

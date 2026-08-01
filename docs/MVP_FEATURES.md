@@ -96,13 +96,13 @@ These are where Copland should beat a click-only editor:
 | Mixer / instrument changes | Playback routing |
 | Live MSCZ round-trip on Railway | Docker image with MuseScore CLI for SVG/audio re-render |
 | Git-like song branching UI | Branches / merge / compare — see [PRD.md](./PRD.md); mutation log is the substrate |
-| Named version picker UI | Labels already supported on mutation log (`label_version` / hop) |
+| Named version picker UI | **Shipped (basic):** Versions panel labels current head + hops to labeled/recent mutations |
 | Realtime collaboration | Cursors + shared mutation stream — see [PRD.md](./PRD.md) |
 | MIDI / piano-roll hybrid | Pitch grid for dense edits |
 | Optical music recognition import | PDF / photo → score |
 | Plugin / scripting surface | Expose same tool registry |
 | Offline local models | Optional non-OpenAI backends |
-| Pitch keypad / inspector palettes | Full click parity for add_note / signatures / dynamics |
+| Pitch keypad / inspector palettes | **Shipped (basic):** Pitch keypad + tempo/dynamic/lyrics/time/key inspector → apply API |
 
 ---
 

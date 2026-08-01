@@ -380,6 +380,153 @@ html[data-theme="dark"] .selection-label {
   color: var(--danger);
 }
 
+.inspector-details,
+.versions-details {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--paper-deep) 55%, transparent);
+  padding: 0 0.55rem;
+  margin-top: 0.45rem;
+}
+
+.inspector-details summary,
+.versions-details summary {
+  cursor: pointer;
+  min-height: var(--touch);
+  display: flex;
+  align-items: center;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  list-style: none;
+}
+
+.inspector-details summary::-webkit-details-marker,
+.versions-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.inspector-panel,
+.versions-panel {
+  padding: 0.35rem 0 0.75rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.pitch-keypad {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.35rem;
+}
+
+.pitch-keypad button {
+  min-height: var(--touch);
+  font-family: "Big Shoulders Display", sans-serif;
+  font-size: 1.05rem;
+  letter-spacing: 0.02em;
+}
+
+.inspector-fields {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.inspector-fields label {
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.inline-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.inline-fields input,
+.inline-fields select,
+.inline-fields button {
+  min-height: var(--touch);
+}
+
+.inline-fields input[type="number"],
+.inline-fields input[type="text"] {
+  width: 5.5rem;
+  border: 1px solid var(--rule);
+  border-radius: 0.45rem;
+  background: var(--paper);
+  color: var(--ink);
+  padding: 0.35rem 0.5rem;
+  font: inherit;
+}
+
+.inline-fields input[type="text"] {
+  width: min(14rem, 100%);
+  flex: 1;
+}
+
+.version-label-form {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.4rem;
+}
+
+.version-label-form input {
+  min-height: var(--touch);
+  border: 1px solid var(--rule);
+  border-radius: 0.45rem;
+  background: var(--paper);
+  color: var(--ink);
+  padding: 0.35rem 0.65rem;
+  font: inherit;
+}
+
+.version-label-form button {
+  min-height: var(--touch);
+}
+
+.version-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.3rem;
+  max-height: 12rem;
+  overflow: auto;
+}
+
+.version-item .version-hop {
+  width: 100%;
+  text-align: left;
+  display: grid;
+  gap: 0.15rem;
+  min-height: var(--touch);
+  padding: 0.45rem 0.6rem;
+}
+
+.version-item.is-current .version-hop {
+  border-color: color-mix(in srgb, var(--brass) 55%, var(--rule));
+  background: color-mix(in srgb, var(--brass) 12%, var(--paper));
+}
+
+.version-title {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.version-meta,
+.version-empty {
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+}
+
 .status {
   color: var(--ink-soft);
   font-family: Literata, Georgia, serif;
