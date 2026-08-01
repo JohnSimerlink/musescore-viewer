@@ -114,7 +114,7 @@ These are where Copland should beat a click-only editor:
 4. **Selection** is measure-level in the browser, derived from timeline geometry; sent with chat / apply requests. Mobile: Select mode + long-press to start/extend ranges.
 5. **Agent** (Python / PydanticAI) owns conversation history and the full MVP tool registry. Node serves the UI and proxies `/api/chat` + `/api/session/*`.
 6. **UI shells**: desktop = library sidebar + score stage + NL **right rail**. Mobile = **score-first** (library drawer, compact transport, bottom chat dock, fullscreen chat). IA: Library ↔ Score ↔ Chat fullscreen.
-7. **Railway / production**: Docker serves seed UI assets. Agent + MuseScore CLI are not in the production image yet — local `npm start` + `npm run agent` is the end-to-end edit path. Plan: agent sidecar and/or image with MuseScore for live re-render.
+7. **Railway / production**: Docker runs Node UI + Python agent (`scripts/start-prod.sh`). Set `XAI_API_KEY` for NL. MuseScore CLI is still not in the image — mutations apply; SVG stays on seed until a CLI worker exists. Plan: [docs/plans/agent-sidecar.md](./plans/agent-sidecar.md).
 
 ### Env vars
 

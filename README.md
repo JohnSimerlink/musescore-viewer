@@ -82,8 +82,25 @@ npm run seed
 
 ## Railway / production
 
-Docker image serves the static UI + pre-rendered seed assets. The Python agent and MuseScore CLI are **not** in the production image yet:
+The Docker image runs **Node UI + Python agent** in one container (`scripts/start-prod.sh`):
 
-- Production remains seed playback + selection UI.
-- Full edit + re-render loop is solid locally (`npm start` + `npm run agent` + MuseScore 4).
-- Next deploy step: agent sidecar (with `XAI_API_KEY`) and optionally a MuseScore-enabled worker for SVG/audio re-render.
+| Capability | In production image |
+| --- | --- |
+| Seed SVG / MP3 / timeline playback | Yes |
+| NL chat + click apply (mutable MSCX) | Yes — set `XAI_API_KEY` (and optional `LLM_*`) on the Railway service |
+| Live SVG/audio re-render after edits | No — MuseScore CLI is not in the image; UI keeps seed pages and shows a render-status note |
+
+Set these Railway variables:
+
+- `XAI_API_KEY` — required for Grok NL chat
+- `LLM_PROVIDER=xai`, `LLM_MODEL=grok-4.5` (optional defaults match `.env.example`)
+- `PORT` — Railway injects this; start script forwards it to Node
+
+Local parity with the image:
+
+```bash
+# after npm install + agent venv (`npm run agent` once is enough to create .venv)
+./scripts/start-prod.sh
+```
+
+Next deploy step: optional MuseScore-enabled worker/sidecar for live SVG/audio re-render.

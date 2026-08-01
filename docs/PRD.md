@@ -87,7 +87,7 @@ See also [MVP_FEATURES.md](./MVP_FEATURES.md) Later table.
 
 - Git-like branching UI for songs; version compare / merge.
 - Realtime collab (cursors + shared mutation stream).
-- Railway/Docker agent + MuseScore CLI for live SVG/audio re-render in production.
+- MuseScore CLI worker for live SVG/audio re-render in production (agent already ships in the Docker image).
 - Pitch keypad / inspector palettes for full click parity.
 - Articulations, beaming, parts, mixer, OMR, offline models.
 
