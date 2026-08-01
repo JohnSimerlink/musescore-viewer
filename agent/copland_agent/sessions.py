@@ -51,6 +51,7 @@ class ScoreSession:
                 "set_selection_voices",
                 "copy_selection",
                 "play_selection",
+                "label_version",
             }
         ):
             self.render(include_audio=False)
